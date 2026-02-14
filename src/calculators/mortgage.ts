@@ -30,6 +30,7 @@ export function calculateMortgage(property: PropertyConfig): MortgageResult {
   const fees = property.price * (property.feesPercent / 100);
   const loanAmount = property.price - downPayment;
   const monthly = monthlyMortgagePayment(loanAmount, property.mortgageRate, property.mortgageTerm);
+  const additionalCosts = property.additionalCosts ?? 0;
 
   return {
     label: property.label,
@@ -37,7 +38,7 @@ export function calculateMortgage(property: PropertyConfig): MortgageResult {
     loanAmount,
     downPayment,
     fees,
-    totalCashNeeded: downPayment + fees,
+    totalCashNeeded: downPayment + fees + additionalCosts,
     monthlyPayment: monthly,
     mortgageRate: property.mortgageRate,
     termYears: property.mortgageTerm,

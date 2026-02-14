@@ -26,7 +26,7 @@ export function inflationAdjustedFireNumber(
  * Calculate the total cash needed for a property purchase (down payment + fees).
  */
 export function propertyCashNeeded(property: PropertyConfig): number {
-  return property.price * ((property.downPaymentPercent + property.feesPercent) / 100);
+  return property.price * ((property.downPaymentPercent + property.feesPercent) / 100) + (property.additionalCosts ?? 0);
 }
 
 /**

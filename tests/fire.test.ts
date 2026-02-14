@@ -38,6 +38,7 @@ describe('propertyCashNeeded', () => {
       price: 500_000,
       downPaymentPercent: 20,
       feesPercent: 12,
+      additionalCosts: 0,
       purchaseYear: 3,
       mortgageRate: 3.2,
       mortgageTerm: 30,
@@ -47,11 +48,27 @@ describe('propertyCashNeeded', () => {
     expect(propertyCashNeeded(prop)).toBe(160_000);
   });
 
+  it('includes additional costs (interior)', () => {
+    const prop: PropertyConfig = {
+      price: 500_000,
+      downPaymentPercent: 20,
+      feesPercent: 12,
+      additionalCosts: 30_000,
+      purchaseYear: 1,
+      mortgageRate: 3.2,
+      mortgageTerm: 20,
+      label: 'Flat + interior',
+    };
+    // 500k * 32% + 30k = 190k
+    expect(propertyCashNeeded(prop)).toBe(190_000);
+  });
+
   it('with 30% down + 12% fees', () => {
     const prop: PropertyConfig = {
       price: 500_000,
       downPaymentPercent: 30,
       feesPercent: 12,
+      additionalCosts: 0,
       purchaseYear: 7,
       mortgageRate: 3.2,
       mortgageTerm: 25,
@@ -73,6 +90,8 @@ describe('gapAnalysis', () => {
       currentPortfolio: 9_000,
       currentCash: 7_500,
       monthlyInvestment: 1_000,
+      monthlyRent: 0,
+      parentLoanYears: 10,
       returnRates: [0.07],
     };
     const properties: PropertyConfig[] = [];

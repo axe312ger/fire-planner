@@ -4,7 +4,6 @@ import { fireNumber, propertyCashNeeded } from '../calculators/fire.js';
 import { gapAnalysis } from '../calculators/fire.js';
 import { calculateMortgage } from '../calculators/mortgage.js';
 import { buildAllScenarios } from '../calculators/scenarios.js';
-import { futureValue } from '../calculators/compound.js';
 import {
   renderSummaryHeader,
   renderScenarioTable,
@@ -12,6 +11,7 @@ import {
   renderGapAnalysis,
   renderMortgageSummary,
   renderDetailedBreakdown,
+  renderPhases,
 } from '../formatters/table.js';
 
 interface CalculateOptions {
@@ -23,10 +23,14 @@ interface CalculateOptions {
   portfolio?: string;
   cash?: string;
   monthly?: string;
+  rent?: string;
+  parentLoanYears?: string;
   flatPrice?: string;
   flatDown?: string;
   flatFees?: string;
+  flatInterior?: string;
   flatYear?: string;
+  flatTerm?: string;
   fincaPrice?: string;
   fincaDown?: string;
   fincaFees?: string;
@@ -45,6 +49,8 @@ export function calculateCommand(opts: CalculateOptions): void {
     currentPortfolio: num(opts.portfolio, DEFAULT_FIRE_CONFIG.currentPortfolio),
     currentCash: num(opts.cash, DEFAULT_FIRE_CONFIG.currentCash),
     monthlyInvestment: num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
+    monthlyRent: num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent),
+    parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
     returnRates: opts.rates
       ? opts.rates.split(',').map((r) => parseFloat(r) / 100)
       : DEFAULT_FIRE_CONFIG.returnRates,
@@ -56,9 +62,10 @@ export function calculateCommand(opts: CalculateOptions): void {
     price: num(opts.flatPrice, DEFAULT_FLAT.price),
     downPaymentPercent: num(opts.flatDown, DEFAULT_FLAT.downPaymentPercent),
     feesPercent: num(opts.flatFees, DEFAULT_FLAT.feesPercent),
+    additionalCosts: num(opts.flatInterior, DEFAULT_FLAT.additionalCosts),
     purchaseYear: num(opts.flatYear, DEFAULT_FLAT.purchaseYear),
     mortgageRate: mortRate,
-    mortgageTerm: DEFAULT_FLAT.mortgageTerm,
+    mortgageTerm: num(opts.flatTerm, DEFAULT_FLAT.mortgageTerm),
     label: DEFAULT_FLAT.label,
   };
 
@@ -76,6 +83,7 @@ export function calculateCommand(opts: CalculateOptions): void {
       price: fincaPrice,
       downPaymentPercent: num(opts.fincaDown, DEFAULT_FINCA.downPaymentPercent),
       feesPercent: num(opts.fincaFees, DEFAULT_FINCA.feesPercent),
+      additionalCosts: DEFAULT_FINCA.additionalCosts,
       purchaseYear: num(opts.fincaYear, DEFAULT_FINCA.purchaseYear),
       mortgageRate: mortRate,
       mortgageTerm: DEFAULT_FINCA.mortgageTerm,
@@ -89,7 +97,7 @@ export function calculateCommand(opts: CalculateOptions): void {
   const currentAssets = config.currentPortfolio + config.currentCash;
   console.log(renderSummaryHeader(fireNum, currentAssets, config.monthlyInvestment, config.targetAge, config.currentAge));
 
-  // Detailed property purchase breakdown (before scenarios, so user understands the math)
+  // Detailed property purchase breakdown
   if (properties.length > 0) {
     const moderateRate = config.returnRates[Math.floor(config.returnRates.length / 2)] ?? 0.07;
     console.log(renderDetailedBreakdown(config, properties, moderateRate));
@@ -97,6 +105,13 @@ export function calculateCommand(opts: CalculateOptions): void {
 
   // Scenarios
   const scenarios = buildAllScenarios(config, properties);
+
+  // Phase breakdown (from moderate scenario)
+  const moderateScenario = scenarios[Math.floor(scenarios.length / 2)];
+  if (moderateScenario?.phases) {
+    console.log(renderPhases(config, moderateScenario.phases));
+  }
+
   for (const scenario of scenarios) {
     console.log(renderScenarioTable(scenario));
   }

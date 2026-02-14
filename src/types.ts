@@ -8,7 +8,9 @@ export interface FireConfig {
   inflationRate: number;
   currentPortfolio: number;
   currentCash: number;
-  monthlyInvestment: number;
+  monthlyInvestment: number; // total monthly savings capacity (before rent/mortgage)
+  monthlyRent: number; // rent paid until property purchase
+  parentLoanYears: number; // years to repay parent loan (interest-free)
   returnRates: number[]; // e.g. [0.05, 0.07, 0.09]
 }
 
@@ -16,6 +18,7 @@ export interface PropertyConfig {
   price: number;
   downPaymentPercent: number; // e.g. 20 for 20%
   feesPercent: number; // e.g. 12 for 12%
+  additionalCosts: number; // interior, renovation, etc.
   purchaseYear: number; // year offset from now (e.g. 3 = in 3 years)
   mortgageRate: number; // annual % e.g. 3.2
   mortgageTerm: number; // years
@@ -43,7 +46,17 @@ export interface Scenario {
   finalBalance: number;
   feasible: boolean;
   parentLoanTotal?: number; // Total borrowed from parents for all properties
-  monthlyAfterMortgage?: number; // Reduced monthly investment after mortgage kicks in
+  phases?: ScenarioPhase[]; // Monthly budget breakdown per phase
+}
+
+export interface ScenarioPhase {
+  label: string;
+  fromAge: number;
+  toAge: number;
+  monthlyInvesting: number;
+  monthlyMortgage: number;
+  monthlyParentLoan: number;
+  monthlyRent: number;
 }
 
 export interface MortgageResult {

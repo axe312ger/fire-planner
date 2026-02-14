@@ -3,12 +3,14 @@ import type { FireConfig, PropertyConfig } from '../types.js';
 export const DEFAULT_FIRE_CONFIG: FireConfig = {
   currentAge: 35,
   targetAge: 55,
-  annualExpenses: 60_000,
+  annualExpenses: 40_000,
   withdrawalRate: 0.04,
   inflationRate: 0.02,
   currentPortfolio: 9_381,
   currentCash: 7_460,
-  monthlyInvestment: 2_000,
+  monthlyInvestment: 4_000,
+  monthlyRent: 1_400,
+  parentLoanYears: 10,
   returnRates: [0.05, 0.07, 0.09],
 };
 
@@ -16,9 +18,10 @@ export const DEFAULT_FLAT: PropertyConfig = {
   price: 500_000,
   downPaymentPercent: 20,
   feesPercent: 12,
+  additionalCosts: 30_000,
   purchaseYear: 1,
   mortgageRate: 3.2,
-  mortgageTerm: 30,
+  mortgageTerm: 20,
   label: 'Flat (primera vivienda)',
 };
 
@@ -26,6 +29,7 @@ export const DEFAULT_FINCA: PropertyConfig = {
   price: 500_000,
   downPaymentPercent: 30,
   feesPercent: 12,
+  additionalCosts: 0,
   purchaseYear: 7,
   mortgageRate: 3.2,
   mortgageTerm: 25,

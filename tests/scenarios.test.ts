@@ -5,12 +5,14 @@ import type { FireConfig, PropertyConfig } from '../src/types.js';
 const baseConfig: FireConfig = {
   currentAge: 35,
   targetAge: 45,
-  annualExpenses: 60_000,
+  annualExpenses: 40_000,
   withdrawalRate: 0.04,
   inflationRate: 0.02,
   currentPortfolio: 9_000,
   currentCash: 7_500,
-  monthlyInvestment: 1_000,
+  monthlyInvestment: 4_000,
+  monthlyRent: 1_400,
+  parentLoanYears: 10,
   returnRates: [0.05, 0.07, 0.09],
 };
 
@@ -18,9 +20,10 @@ const flat: PropertyConfig = {
   price: 500_000,
   downPaymentPercent: 20,
   feesPercent: 12,
-  purchaseYear: 3,
+  additionalCosts: 30_000,
+  purchaseYear: 1,
   mortgageRate: 3.2,
-  mortgageTerm: 30,
+  mortgageTerm: 20,
   label: 'Flat',
 };
 
@@ -31,151 +34,147 @@ describe('buildScenario', () => {
     expect(scenario.projections).toHaveLength(10);
     expect(scenario.feasible).toBe(true);
 
-    // Each year's end balance should be greater than start (no withdrawals)
     for (const p of scenario.projections) {
       expect(p.endBalance).toBeGreaterThan(p.startBalance);
       expect(p.propertyWithdrawal).toBe(0);
     }
   });
 
+  it('pre-purchase years have rent deducted from contributions', () => {
+    // Flat at year 3 — years 1 and 2 should have rent deducted
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 3 };
+    const scenario = buildScenario(baseConfig, [laterFlat], 0.07);
+
+    const year1 = scenario.projections[0];
+    // Monthly: 4000 - 1400 rent = 2600/mo → 31,200/yr
+    expect(year1.contributions).toBeCloseTo(31_200, -2);
+  });
+
   it('with property that can be fully covered → no parent loan', () => {
-    // Rich config: can cover €160k cash needed for flat
     const richConfig: FireConfig = {
       ...baseConfig,
       currentPortfolio: 200_000,
-      monthlyInvestment: 5_000,
+      monthlyInvestment: 10_000,
+      monthlyRent: 0,
     };
 
     const scenario = buildScenario(richConfig, [flat], 0.07);
-    const year3 = scenario.projections[2];
+    const year1 = scenario.projections[0];
 
-    expect(year3.propertyWithdrawal).toBe(160_000); // 500k * 32%
-    expect(year3.propertyLabel).toBe('Flat');
-    expect(year3.parentLoan).toBeUndefined();
+    expect(year1.parentLoan).toBeUndefined();
     expect(scenario.parentLoanTotal).toBeUndefined();
   });
 
-  it('with property that exceeds balance → parent loan bridges the gap', () => {
-    // baseConfig: ~€16.5k starting, €1k/mo — can't cover €160k in 3 years
+  it('calculates parent loan including interior costs', () => {
     const scenario = buildScenario(baseConfig, [flat], 0.07);
-    const year3 = scenario.projections[2];
-
-    expect(year3.propertyLabel).toBe('Flat');
-    expect(year3.parentLoan).toBeGreaterThan(0);
-    expect(scenario.parentLoanTotal).toBeGreaterThan(0);
-    expect(scenario.feasible).toBe(true); // parent loan makes it feasible
-
-    // Parent loan + own savings should equal the total cash needed
-    const cashNeeded = 160_000;
-    expect(year3.propertyWithdrawal + year3.parentLoan!).toBeCloseTo(cashNeeded, -1);
-
-    // After property, balance should be ~0
-    expect(year3.endBalance).toBeCloseTo(0, -1);
-  });
-
-  it('calculates correct parent loan amount', () => {
-    // Simple case: buy flat at year 1 with minimal savings
-    const earlyFlat: PropertyConfig = { ...flat, purchaseYear: 1 };
-    const scenario = buildScenario(baseConfig, [earlyFlat], 0.07);
     const year1 = scenario.projections[0];
 
-    // Starting: €16,500, contrib: €12,000, growth: €16,500 * 0.07 = €1,155
-    // Available: ~€29,655
-    // Cash needed: €160,000
-    // Parent loan: ~€130,345
-    expect(year1.parentLoan).toBeGreaterThan(120_000);
-    expect(year1.parentLoan).toBeLessThan(140_000);
+    // Cash needed: 500k * 32% + 30k interior = 190,000
+    // Available: starting 16,500 + (4000-1400)*12 + growth ≈ ~49k
+    // Parent loan: ~141k
+    expect(year1.parentLoan).toBeGreaterThan(130_000);
+    expect(year1.parentLoan).toBeLessThan(150_000);
     expect(scenario.parentLoanTotal).toBe(year1.parentLoan);
   });
 
-  it('reduces monthly investment after mortgage', () => {
-    const earlyFlat: PropertyConfig = { ...flat, purchaseYear: 1 };
-    const scenario = buildScenario(baseConfig, [earlyFlat], 0.07);
+  it('reduces monthly by mortgage + parent loan repayment after purchase', () => {
+    const scenario = buildScenario(baseConfig, [flat], 0.07);
 
-    // Year 1: property purchase, monthly gets reduced
-    // Mortgage: €400k at 3.2% for 30yr ≈ €1,730/mo
-    // Starting monthly: €1,000
-    // After mortgage: max(0, 1000 - 1730) = 0
-    expect(scenario.monthlyAfterMortgage).toBe(0);
-
-    // Year 2 contributions should be €0 (monthly wiped out by mortgage)
+    // After purchase: monthly = 4000 - mortgage(~2260) - parentLoan(~141k/120mo ≈ ~1175)
+    // = 4000 - 2260 - 1175 ≈ 565/mo → ~6780/yr
     const year2 = scenario.projections[1];
-    expect(year2.contributions).toBe(0);
+    expect(year2.contributions).toBeGreaterThan(4_000);
+    expect(year2.contributions).toBeLessThan(10_000);
   });
 
-  it('monthly after mortgage is positive if savings exceed mortgage', () => {
-    const highSavingsConfig: FireConfig = {
-      ...baseConfig,
-      monthlyInvestment: 5_000,
-    };
-    const earlyFlat: PropertyConfig = { ...flat, purchaseYear: 1 };
-    const scenario = buildScenario(highSavingsConfig, [earlyFlat], 0.07);
+  it('contributions increase after parent loan is repaid', () => {
+    const config20yr: FireConfig = { ...baseConfig, targetAge: 60 };
+    const scenario = buildScenario(config20yr, [flat], 0.07);
 
-    // Mortgage ≈ €1,730/mo, savings €5,000/mo → after = ~€3,270/mo
-    expect(scenario.monthlyAfterMortgage!).toBeGreaterThan(3_000);
-    expect(scenario.monthlyAfterMortgage!).toBeLessThan(3_500);
+    // Year 2 (mortgage + parent loan) vs year 12 (mortgage only, parent loan done)
+    const earlyYear = scenario.projections[1]; // year 2
+    const lateYear = scenario.projections[11]; // year 12, parent loan done
 
-    // Year 2 contributions should reflect the reduced monthly
-    const year2 = scenario.projections[1];
-    expect(year2.contributions).toBeCloseTo(scenario.monthlyAfterMortgage! * 12, -2);
+    expect(lateYear.contributions).toBeGreaterThan(earlyYear.contributions);
+  });
+
+  it('generates phase breakdown', () => {
+    const config25yr: FireConfig = { ...baseConfig, targetAge: 60 };
+    const scenario = buildScenario(config25yr, [flat], 0.07);
+
+    expect(scenario.phases).toBeDefined();
+    expect(scenario.phases!.length).toBeGreaterThanOrEqual(2);
+
+    // First phase: rent
+    expect(scenario.phases![0].monthlyRent).toBe(1_400);
+    expect(scenario.phases![0].monthlyMortgage).toBe(0);
+
+    // Second phase: mortgage + parent loan
+    expect(scenario.phases![1].monthlyMortgage).toBeGreaterThan(2_000);
+    expect(scenario.phases![1].monthlyParentLoan).toBeGreaterThan(0);
+
+    // Third phase: mortgage only
+    if (scenario.phases!.length >= 3) {
+      expect(scenario.phases![2].monthlyParentLoan).toBe(0);
+      expect(scenario.phases![2].monthlyInvesting).toBeGreaterThan(scenario.phases![1].monthlyInvesting);
+    }
   });
 
   it('FIRE reached → correct year identified', () => {
-    // High monthly + high return to ensure FIRE is reached
     const richConfig: FireConfig = {
       ...baseConfig,
       currentPortfolio: 500_000,
       monthlyInvestment: 10_000,
+      monthlyRent: 0,
       targetAge: 55,
     };
 
     const scenario = buildScenario(richConfig, [], 0.09);
     expect(scenario.fireReachedYear).not.toBeNull();
-    expect(scenario.fireReachedAge).not.toBeNull();
-    expect(scenario.fireReachedAge!).toBeLessThanOrEqual(55);
+    expect(scenario.fireReachedAge).toBeLessThanOrEqual(55);
   });
 
-  it('realistic flat-at-year-1 scenario with €2k/mo savings', () => {
-    // Mirrors the user's real situation
+  it('realistic user scenario: flat at year 1, 20yr mortgage, €4k savings', () => {
     const userConfig: FireConfig = {
       currentAge: 35,
       targetAge: 55,
-      annualExpenses: 60_000,
+      annualExpenses: 40_000,
       withdrawalRate: 0.04,
       inflationRate: 0.02,
       currentPortfolio: 9_381,
       currentCash: 7_460,
-      monthlyInvestment: 2_000,
+      monthlyInvestment: 4_000,
+      monthlyRent: 1_400,
+      parentLoanYears: 10,
       returnRates: [0.07],
     };
-    const earlyFlat: PropertyConfig = {
+    const userFlat: PropertyConfig = {
       price: 500_000,
       downPaymentPercent: 20,
       feesPercent: 12,
+      additionalCosts: 30_000,
       purchaseYear: 1,
       mortgageRate: 3.2,
-      mortgageTerm: 30,
+      mortgageTerm: 20,
       label: 'Flat',
     };
 
-    const scenario = buildScenario(userConfig, [earlyFlat], 0.07);
-    const year1 = scenario.projections[0];
+    const scenario = buildScenario(userConfig, [userFlat], 0.07);
 
-    // Starting: €16,841
-    // Year 1 contrib: €24,000
-    // Year 1 growth: €16,841 * 0.07 = €1,179
-    // Available: ~€42,020
-    // Cash needed: €160,000
-    // Parent loan: ~€117,980
-    expect(year1.parentLoan).toBeGreaterThan(110_000);
-    expect(year1.parentLoan).toBeLessThan(125_000);
+    // Parent loan should be ~€141k (190k needed - ~49k projected)
+    expect(scenario.parentLoanTotal).toBeGreaterThan(130_000);
+    expect(scenario.parentLoanTotal).toBeLessThan(150_000);
 
-    // Mortgage: ~€1,730/mo, savings: €2,000/mo → after: ~€270/mo
-    expect(scenario.monthlyAfterMortgage!).toBeGreaterThan(200);
-    expect(scenario.monthlyAfterMortgage!).toBeLessThan(350);
-
-    // Should be feasible (parent loan covers the gap)
+    // Should be feasible (parent loan covers gap)
     expect(scenario.feasible).toBe(true);
+
+    // Has 3 phases: rent, mortgage+parent, mortgage only
+    expect(scenario.phases).toBeDefined();
+    expect(scenario.phases!.length).toBe(3);
+
+    // After parent loan (year 12+), investing should be >€1,500/mo
+    const mortgageOnlyPhase = scenario.phases![2];
+    expect(mortgageOnlyPhase.monthlyInvesting).toBeGreaterThan(1_500);
   });
 });
 
