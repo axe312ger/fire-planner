@@ -27,19 +27,16 @@ export interface SavingsPlanAction {
 
 /**
  * The default FIRE-optimized allocation for Phase 1.
+ *
+ * Until June 2026: Global + EM merged into 70% via SC MSCI AC World (0% TER promo).
+ * After June 2026: Consider splitting back to 60% Global + 10% dedicated EM ETF.
  */
 export const FIRE_ALLOCATION: AllocationTarget[] = [
   {
-    label: 'Global ETFs',
-    percent: 60,
-    categories: ['global-etf'],
-    maxPositions: 2,
-  },
-  {
-    label: 'Emerging Markets',
-    percent: 10,
-    categories: ['regional-etf'],
-    // Only EM-focused ETFs, identified by name keywords
+    label: 'Global + EM (MSCI ACWI)',
+    percent: 70,
+    categories: ['global-etf', 'regional-etf'],
+    preferredIsins: ['LU2903252349'], // SC MSCI AC World Xtrackers — 0% TER until 11 Jun 2026
     maxPositions: 1,
   },
   {
@@ -85,6 +82,11 @@ const STOCK_TARGETS: Record<string, { monthly: number; reason: string }> = {
  * Suggested new positions when a category has no existing holdings.
  */
 const NEW_POSITION_SUGGESTIONS: Record<string, { isin: string; name: string; reason: string }> = {
+  'Global + EM (MSCI ACWI)': {
+    isin: 'LU2903252349',
+    name: 'Scalable MSCI AC World Xtrackers UCITS ETF 1C',
+    reason: '0% TER until Jun 2026, then 0.17% — MSCI ACWI covers developed + EM',
+  },
   'Bond ETFs': {
     isin: 'IE00BYZ28V50',
     name: 'iShares Core Global Aggregate Bond UCITS ETF',
@@ -115,18 +117,15 @@ export function generateRecommendation(
       continue;
     }
 
-    if (target.label === 'Emerging Markets') {
-      // Special handling: only keep EM-focused regional ETFs
-      const emActions = recommendEmergingMarkets(analysis, categoryBudget, assignedIsins);
-      actions.push(...emActions);
-      continue;
-    }
-
-    // For other categories: pick the best positions by TER
+    // For generic categories: prefer specific ISINs if set, otherwise pick by TER
     const categoryPositions = analysis.positions
       .filter((p) => target.categories.includes(p.category) && !assignedIsins.has(p.isin))
       .sort((a, b) => {
-        // Prefer lower TER, then higher current value
+        // Preferred ISINs first, then lower TER, then higher current value
+        const preferredIsins = target.preferredIsins ?? [];
+        const aPreferred = preferredIsins.includes(a.isin) ? 0 : 1;
+        const bPreferred = preferredIsins.includes(b.isin) ? 0 : 1;
+        if (aPreferred !== bPreferred) return aPreferred - bPreferred;
         const terA = a.metadata?.ter ?? 1;
         const terB = b.metadata?.ter ?? 1;
         if (terA !== terB) return terA - terB;
@@ -165,6 +164,7 @@ export function generateRecommendation(
       const targetMonthly = Math.round(budgetPerPosition[i]);
       assignedIsins.add(pos.isin);
 
+      const isPreferred = target.preferredIsins?.includes(pos.isin);
       actions.push({
         action: targetMonthly > pos.monthlyInvestment ? 'increase' : 'keep',
         isin: pos.isin,
@@ -173,9 +173,11 @@ export function generateRecommendation(
         targetMonthly,
         change: targetMonthly - pos.monthlyInvestment,
         category: target.label,
-        reason: pos.metadata?.ter
-          ? `TER ${(pos.metadata.ter * 100).toFixed(2)}%`
-          : 'Core position',
+        reason: isPreferred
+          ? 'Preferred — 0% TER promo until Jun 2026'
+          : pos.metadata?.ter
+            ? `TER ${(pos.metadata.ter * 100).toFixed(2)}%`
+            : 'Core position',
       });
     }
 
@@ -191,7 +193,7 @@ export function generateRecommendation(
           targetMonthly: 0,
           change: -pos.monthlyInvestment,
           category: target.label,
-          reason: `Over limit — max ${maxPositions} position(s) in ${target.label}`,
+          reason: `Consolidate into preferred position — max ${maxPositions} in ${target.label}`,
         });
       }
     }
@@ -280,43 +282,6 @@ function recommendStocks(
         reason: 'Consolidate — max 5 stock picks for FIRE focus',
       });
     }
-  }
-
-  return actions;
-}
-
-function recommendEmergingMarkets(
-  analysis: PortfolioAnalysis,
-  budget: number,
-  assignedIsins: Set<string>,
-): SavingsPlanAction[] {
-  const actions: SavingsPlanAction[] = [];
-
-  // Find EM-focused ETFs by checking names
-  const emPositions = analysis.positions.filter((p) => {
-    const name = (p.name ?? '').toLowerCase();
-    return (
-      (p.category === 'regional-etf' || p.category === 'global-etf') &&
-      (name.includes('emerging') || name.includes(' em ') || name.includes('net zero pab'))
-    );
-  });
-
-  if (emPositions.length > 0) {
-    // Pick the cheapest by TER
-    emPositions.sort((a, b) => (a.metadata?.ter ?? 1) - (b.metadata?.ter ?? 1));
-    const best = emPositions[0];
-    assignedIsins.add(best.isin);
-
-    actions.push({
-      action: budget > best.monthlyInvestment ? 'increase' : 'keep',
-      isin: best.isin,
-      name: best.name,
-      currentMonthly: best.monthlyInvestment,
-      targetMonthly: Math.round(budget),
-      change: Math.round(budget) - best.monthlyInvestment,
-      category: 'Emerging Markets',
-      reason: best.metadata?.ter ? `TER ${(best.metadata.ter * 100).toFixed(2)}%` : 'EM exposure',
-    });
   }
 
   return actions;

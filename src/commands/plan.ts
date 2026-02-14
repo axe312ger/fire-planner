@@ -18,8 +18,7 @@ interface Allocation {
 }
 
 const DEFAULT_ALLOCATION: Allocation[] = [
-  { label: 'Global ETFs', percent: 60 },
-  { label: 'Emerging Markets', percent: 10 },
+  { label: 'Global + EM (MSCI ACWI)', percent: 70 },
   { label: 'Gold / Commodities', percent: 10 },
   { label: 'Individual Stocks', percent: 15 },
   { label: 'Bond ETFs', percent: 5 },
