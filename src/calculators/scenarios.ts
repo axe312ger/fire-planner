@@ -6,11 +6,14 @@ import type {
 } from '../types.js';
 import { inflationAdjustedFireNumber } from './fire.js';
 import { propertyCashNeeded } from './fire.js';
+import { monthlyMortgagePayment } from './mortgage.js';
 import { SCENARIO_LABELS } from '../config/defaults.js';
 
 /**
  * Build a year-by-year projection for a given return rate.
  * Property milestones are modeled as withdrawals in the year they occur.
+ * If the portfolio can't cover the property cost, a parent loan bridges the gap.
+ * After a property purchase, monthly investment is reduced by the mortgage payment.
  */
 export function buildScenario(
   config: FireConfig,
@@ -20,14 +23,10 @@ export function buildScenario(
   const years = config.targetAge - config.currentAge;
   const label = SCENARIO_LABELS[returnRate] ?? `${(returnRate * 100).toFixed(0)}% return`;
 
-  // Build property withdrawal map: yearOffset → { amount, label }
-  const propertyWithdrawals = new Map<number, { amount: number; label: string }>();
+  // Build property data map: yearOffset → PropertyConfig
+  const propertyMap = new Map<number, PropertyConfig>();
   for (const prop of properties) {
-    const cash = propertyCashNeeded(prop);
-    propertyWithdrawals.set(prop.purchaseYear, {
-      amount: cash,
-      label: prop.label,
-    });
+    propertyMap.set(prop.purchaseYear, prop);
   }
 
   const projections: YearProjection[] = [];
@@ -35,19 +34,39 @@ export function buildScenario(
   let fireReachedYear: number | null = null;
   let fireReachedAge: number | null = null;
   let feasible = true;
+  let currentMonthly = config.monthlyInvestment;
+  let totalParentLoan = 0;
 
   for (let y = 1; y <= years; y++) {
     const startBalance = balance;
-    const annualContribution = config.monthlyInvestment * 12;
+    const annualContribution = currentMonthly * 12;
     const growth = startBalance * returnRate;
 
     let propertyWithdrawal = 0;
     let propertyLabel: string | undefined;
+    let parentLoan = 0;
 
-    const pw = propertyWithdrawals.get(y);
-    if (pw) {
-      propertyWithdrawal = pw.amount;
-      propertyLabel = pw.label;
+    const prop = propertyMap.get(y);
+    if (prop) {
+      const cashNeeded = propertyCashNeeded(prop);
+      propertyLabel = prop.label;
+
+      const availableBalance = startBalance + annualContribution + growth;
+
+      if (availableBalance >= cashNeeded) {
+        // Can fully cover property from own savings
+        propertyWithdrawal = cashNeeded;
+      } else {
+        // Need parent loan for the gap
+        parentLoan = cashNeeded - Math.max(0, availableBalance);
+        propertyWithdrawal = Math.max(0, availableBalance); // withdraw everything we have
+        totalParentLoan += parentLoan;
+      }
+
+      // After purchase, reduce monthly investment by mortgage payment
+      const loanAmount = prop.price * (1 - prop.downPaymentPercent / 100);
+      const mortgageMonthly = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
+      currentMonthly = Math.max(0, currentMonthly - mortgageMonthly);
     }
 
     balance = startBalance + annualContribution + growth - propertyWithdrawal;
@@ -78,6 +97,7 @@ export function buildScenario(
       growth,
       propertyWithdrawal,
       propertyLabel,
+      parentLoan: parentLoan > 0 ? parentLoan : undefined,
       endBalance: balance,
     });
   }
@@ -90,6 +110,8 @@ export function buildScenario(
     fireReachedAge,
     finalBalance: balance,
     feasible,
+    parentLoanTotal: totalParentLoan > 0 ? totalParentLoan : undefined,
+    monthlyAfterMortgage: currentMonthly,
   };
 }
 

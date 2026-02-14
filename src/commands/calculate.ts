@@ -1,15 +1,17 @@
 import type { FireConfig, PropertyConfig } from '../types.js';
 import { DEFAULT_FIRE_CONFIG, DEFAULT_FLAT, DEFAULT_FINCA } from '../config/defaults.js';
-import { fireNumber } from '../calculators/fire.js';
+import { fireNumber, propertyCashNeeded } from '../calculators/fire.js';
 import { gapAnalysis } from '../calculators/fire.js';
 import { calculateMortgage } from '../calculators/mortgage.js';
 import { buildAllScenarios } from '../calculators/scenarios.js';
+import { futureValue } from '../calculators/compound.js';
 import {
   renderSummaryHeader,
   renderScenarioTable,
   renderScenarioComparison,
   renderGapAnalysis,
   renderMortgageSummary,
+  renderDetailedBreakdown,
 } from '../formatters/table.js';
 
 interface CalculateOptions {
@@ -60,22 +62,38 @@ export function calculateCommand(opts: CalculateOptions): void {
     label: DEFAULT_FLAT.label,
   };
 
-  const finca: PropertyConfig = {
-    price: num(opts.fincaPrice, DEFAULT_FINCA.price),
-    downPaymentPercent: num(opts.fincaDown, DEFAULT_FINCA.downPaymentPercent),
-    feesPercent: num(opts.fincaFees, DEFAULT_FINCA.feesPercent),
-    purchaseYear: num(opts.fincaYear, DEFAULT_FINCA.purchaseYear),
-    mortgageRate: mortRate,
-    mortgageTerm: DEFAULT_FINCA.mortgageTerm,
-    label: DEFAULT_FINCA.label,
-  };
+  const fincaPrice = num(opts.fincaPrice, DEFAULT_FINCA.price);
 
-  const properties = [flat, finca];
+  // Build property list — skip properties with price 0
+  const properties: PropertyConfig[] = [];
+
+  if (flat.price > 0) {
+    properties.push(flat);
+  }
+
+  if (fincaPrice > 0) {
+    const finca: PropertyConfig = {
+      price: fincaPrice,
+      downPaymentPercent: num(opts.fincaDown, DEFAULT_FINCA.downPaymentPercent),
+      feesPercent: num(opts.fincaFees, DEFAULT_FINCA.feesPercent),
+      purchaseYear: num(opts.fincaYear, DEFAULT_FINCA.purchaseYear),
+      mortgageRate: mortRate,
+      mortgageTerm: DEFAULT_FINCA.mortgageTerm,
+      label: DEFAULT_FINCA.label,
+    };
+    properties.push(finca);
+  }
 
   // Summary header
   const fireNum = fireNumber(config.annualExpenses, config.withdrawalRate);
   const currentAssets = config.currentPortfolio + config.currentCash;
   console.log(renderSummaryHeader(fireNum, currentAssets, config.monthlyInvestment, config.targetAge, config.currentAge));
+
+  // Detailed property purchase breakdown (before scenarios, so user understands the math)
+  if (properties.length > 0) {
+    const moderateRate = config.returnRates[Math.floor(config.returnRates.length / 2)] ?? 0.07;
+    console.log(renderDetailedBreakdown(config, properties, moderateRate));
+  }
 
   // Scenarios
   const scenarios = buildAllScenarios(config, properties);
@@ -93,7 +111,9 @@ export function calculateCommand(opts: CalculateOptions): void {
 
   // Mortgage info
   const mortgages = properties.map(calculateMortgage);
-  console.log(renderMortgageSummary(mortgages));
+  if (mortgages.length > 0) {
+    console.log(renderMortgageSummary(mortgages));
+  }
 
   console.log('');
 }

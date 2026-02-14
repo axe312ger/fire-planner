@@ -30,6 +30,7 @@ export interface YearProjection {
   growth: number;
   propertyWithdrawal: number;
   propertyLabel?: string;
+  parentLoan?: number; // Amount borrowed from parents to cover property gap
   endBalance: number;
 }
 
@@ -41,6 +42,8 @@ export interface Scenario {
   fireReachedAge: number | null;
   finalBalance: number;
   feasible: boolean;
+  parentLoanTotal?: number; // Total borrowed from parents for all properties
+  monthlyAfterMortgage?: number; // Reduced monthly investment after mortgage kicks in
 }
 
 export interface MortgageResult {
