@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { calculateCommand } from './commands/calculate.js';
 import { analyzeCommand } from './commands/analyze.js';
 import { suggestCommand } from './commands/suggest.js';
+import { planCommand } from './commands/plan.js';
 import { DEFAULT_FIRE_CONFIG, DEFAULT_FLAT, DEFAULT_FINCA } from './config/defaults.js';
 
 const d = DEFAULT_FIRE_CONFIG;
@@ -42,6 +43,29 @@ program
   .option('--rates <list>', `Return rates to model, comma-separated % (default: ${d.returnRates.map((r) => r * 100).join(',')})`)
   .option('--mortgage-rate <n>', `Annual mortgage rate % (default: ${f.mortgageRate})`)
   .action(calculateCommand);
+
+program
+  .command('plan')
+  .description('Generate investment plan CSV with year-by-year allocation')
+  .option('--age <n>', `Current age (default: ${d.currentAge})`)
+  .option('--target-age <n>', `Target retirement age (default: ${d.targetAge})`)
+  .option('--expenses <n>', `Annual expenses in EUR (default: ${d.annualExpenses})`)
+  .option('--portfolio <n>', `Current portfolio value (default: ${d.currentPortfolio})`)
+  .option('--cash <n>', `Current cash savings (default: ${d.currentCash})`)
+  .option('--monthly <n>', `Monthly savings capacity (default: ${d.monthlyInvestment})`)
+  .option('--rent <n>', `Monthly rent until flat (default: ${d.monthlyRent})`)
+  .option('--parent-loan-years <n>', `Years to repay parent loan (default: ${d.parentLoanYears})`)
+  .option('--flat-price <n>', `Flat price (default: ${f.price})`)
+  .option('--flat-down <n>', `Flat down payment % (default: ${f.downPaymentPercent})`)
+  .option('--flat-fees <n>', `Flat fees % (default: ${f.feesPercent})`)
+  .option('--flat-interior <n>', `Interior budget (default: ${f.additionalCosts})`)
+  .option('--flat-year <n>', `Year to buy flat (default: ${f.purchaseYear})`)
+  .option('--flat-term <n>', `Mortgage term years (default: ${f.mortgageTerm})`)
+  .option('--finca-price <n>', `Finca price, 0 to skip (default: ${fi.price})`)
+  .option('--rate <n>', `Return rate % for plan (default: 7)`)
+  .option('--mortgage-rate <n>', `Mortgage rate % (default: ${f.mortgageRate})`)
+  .option('-o, --output <path>', 'Output CSV file path (default: ./fire-plan.csv)')
+  .action(planCommand);
 
 program
   .command('analyze <csv>')
