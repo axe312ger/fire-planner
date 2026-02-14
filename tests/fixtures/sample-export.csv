@@ -1,0 +1,11 @@
+date;time;status;reference;description;assetType;type;isin;shares;price;amount;fee;tax;currency
+2026-02-10;09:15:00;executed;REF001;iShares Core MSCI World;ETF;Savings plan;IE00B4L5Y983;0,929195;53,81;-49,99998295;0;0;EUR
+2026-02-10;09:15:00;executed;REF002;Vanguard FTSE All-World;ETF;Savings plan;IE00BK5BQT80;0,452100;110,60;-49,99926600;0;0;EUR
+2026-01-10;09:15:00;executed;REF003;iShares Core MSCI World;ETF;Savings plan;IE00B4L5Y983;0,950000;52,63;-49,99850000;0;0;EUR
+2026-01-10;09:15:00;executed;REF004;Vanguard FTSE All-World;ETF;Savings plan;IE00BK5BQT80;0,460000;108,70;-50,00200000;0;0;EUR
+2025-12-10;09:15:00;executed;REF005;iShares Core MSCI World;ETF;Savings plan;IE00B4L5Y983;0,980000;51,02;-49,99960000;0;0;EUR
+2026-01-15;10:00:00;executed;REF006;Tesla Inc;EQUITY;Savings plan;US88160R1014;0,125000;400,00;-50,00000000;0;0;EUR
+2025-12-20;14:00:00;executed;REF007;Vanguard FTSE All-World;ETF;Distribution;IE00BK5BQT80;0;0;3,25;0;0,85;EUR
+2026-01-05;00:00:00;executed;REF008;;CASH;Interest;;;0;0;1,50;0;0,39;EUR
+2026-02-01;00:00:00;executed;REF009;;FEE;Fee;;;0;0;-2,99;0;0;EUR
+2025-12-10;09:15:00;executed;REF010;Xtrackers MSCI Emerging Markets;ETF;Savings plan;IE00BTJRMP35;0,530000;18,87;-10,00110000;0;0;EUR

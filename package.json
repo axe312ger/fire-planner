@@ -1,0 +1,22 @@
+{
+  "name": "fire-planner",
+  "version": "1.0.0",
+  "description": "FIRE (Financial Independence, Retire Early) planner CLI with portfolio analysis",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cheerio": "^1.0.0",
+    "commander": "^12.1.0",
+    "csv-parse": "^5.6.0",
+    "yahoo-finance2": "^2.14.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
