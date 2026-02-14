@@ -20,8 +20,10 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
   const name = (metadata.name ?? '').toLowerCase();
   let quoteType = (metadata.quoteType ?? '').toUpperCase();
 
-  // Fall back to CSV asset type if Yahoo didn't provide a quote type
-  if (!quoteType && csvAssetType) {
+  // Fall back to CSV asset type if Yahoo didn't provide a quote type.
+  // Note: official Scalable exports use "Security" for everything, so only use
+  // specific types like "ETF", "EQUITY", etc.
+  if (!quoteType && csvAssetType && csvAssetType.toUpperCase() !== 'SECURITY' && csvAssetType.toUpperCase() !== 'CASH') {
     quoteType = csvAssetType.toUpperCase();
   }
 
@@ -47,8 +49,19 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
     return 'individual-stock';
   }
 
-  // ETFs
-  if (quoteType === 'ETF' || quoteType === 'MUTUALFUND' || name.includes('etf') || name.includes('ucits')) {
+  // Detect ETFs by quoteType, name keywords, or common ETF provider names
+  const isEtf =
+    quoteType === 'ETF' || quoteType === 'MUTUALFUND' ||
+    name.includes('etf') || name.includes('ucits') ||
+    name.includes('(acc)') || name.includes('(dist)') ||
+    name.includes('xtrackers') || name.includes('ishares') || name.includes('vanguard') ||
+    name.includes('vaneck') || name.includes('hanetf') || name.includes('amundi') ||
+    name.includes('spdr') || name.includes('invesco') || name.includes('lyxor') ||
+    name.includes('scalable msci') || name.includes('scalable s&p') ||
+    name.includes('sc msci') || name.includes('x msci') || name.includes('x ie ') ||
+    name.includes('ish ') || name.includes('vnek ') || name.includes('x em ');
+
+  if (isEtf) {
     // Bond ETFs
     if (name.includes('bond') || name.includes('treasury') || name.includes('aggregate') || name.includes('fixed income')) {
       return 'bond-etf';
@@ -59,18 +72,24 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
       name.includes('technology') || name.includes('healthcare') || name.includes('clean energy') ||
       name.includes('semiconductor') || name.includes('cyber') || name.includes('gaming') ||
       name.includes('automation') || name.includes('artificial intelligence') ||
-      name.includes('blockchain') || name.includes('water') || name.includes('cloud')
+      name.includes('blockchain') || name.includes('water') || name.includes('cloud') ||
+      name.includes('defence') || name.includes('defense') || name.includes('internet') ||
+      name.includes('innovation') || name.includes('momentum') || name.includes('next generation') ||
+      name.includes('digital') || name.includes('robotics') || name.includes('battery') ||
+      name.includes('infrastructure') || name.includes('real estate') || name.includes('reit')
     ) {
       return 'sector-etf';
     }
 
     // Regional ETFs
     if (
-      name.includes('europe') || name.includes('asia') || name.includes('emerging') ||
-      name.includes('japan') || name.includes('china') || name.includes('africa') ||
-      name.includes('india') || name.includes('latin') || name.includes('frontier') ||
-      name.includes('pacific') || name.includes('euro stoxx') || name.includes('dax') ||
-      name.includes('s&p 500') || name.includes('nasdaq') || name.includes('ftse 100')
+      name.includes('europe') || name.includes('european') || name.includes('asia') ||
+      name.includes('emerging') || name.includes('japan') || name.includes('china') ||
+      name.includes('africa') || name.includes('india') || name.includes('latin') ||
+      name.includes('frontier') || name.includes('pacific') || name.includes('euro stoxx') ||
+      name.includes('dax') || name.includes('s&p 500') || name.includes('nasdaq') ||
+      name.includes('ftse 100') || name.includes('equal weight') ||
+      name.includes('india') || name.includes('net zero')
     ) {
       return 'regional-etf';
     }
@@ -78,7 +97,8 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
     // Global ETFs
     if (
       name.includes('world') || name.includes('global') || name.includes('all-world') ||
-      name.includes('acwi') || name.includes('msci world') || name.includes('ftse all')
+      name.includes('acwi') || name.includes('msci world') || name.includes('ftse all') ||
+      name.includes('ac world') || name.includes('all world')
     ) {
       return 'global-etf';
     }
@@ -91,9 +111,9 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
 }
 
 /**
- * Determine region from metadata. Also checks the CSV description for keywords.
+ * Determine region from metadata, CSV description, and ISIN prefix.
  */
-export function determineRegion(metadata: AssetMetadata, csvDescription?: string): string {
+export function determineRegion(metadata: AssetMetadata, csvDescription?: string, isin?: string): string {
   // Check both the API name and CSV description for region keywords
   const sources = [(metadata.name ?? ''), (csvDescription ?? '')];
   const name = sources.join(' ').toLowerCase();
@@ -115,6 +135,23 @@ export function determineRegion(metadata: AssetMetadata, csvDescription?: string
     return 'Asia-Pacific';
   }
   if (name.includes('latin')) return 'Latin America';
+
+  // Fall back to ISIN country prefix for individual stocks
+  if (isin && isin.length >= 2) {
+    const country = isin.substring(0, 2).toUpperCase();
+    const countryToRegion: Record<string, string> = {
+      US: 'North America', CA: 'North America',
+      DE: 'Europe', NL: 'Europe', FR: 'Europe', ES: 'Europe', IT: 'Europe',
+      GB: 'Europe', IE: 'Europe', DK: 'Europe', NO: 'Europe', SE: 'Europe',
+      FI: 'Europe', CH: 'Europe', AT: 'Europe', BE: 'Europe', PT: 'Europe',
+      LU: 'Europe',
+      JP: 'Asia-Pacific', KR: 'Asia-Pacific', AU: 'Asia-Pacific', HK: 'Asia-Pacific',
+      CN: 'Asia-Pacific', TW: 'Asia-Pacific', SG: 'Asia-Pacific',
+      BR: 'Latin America', MX: 'Latin America',
+      ZA: 'Africa', NG: 'Africa', EG: 'Africa', KE: 'Africa',
+    };
+    if (countryToRegion[country]) return countryToRegion[country];
+  }
 
   return 'Other';
 }
@@ -157,19 +194,45 @@ export async function analyzePortfolio(
     };
     const category = categorizeAsset(isin, enrichedMetadata, csvAssetType);
 
-    const savingsPlans = txs.filter((t) => t.type === 'Savings plan');
-    const totalShares = savingsPlans.reduce((sum, t) => sum + t.shares, 0);
-    const totalInvested = savingsPlans.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const avgPrice = totalShares > 0 ? totalInvested / totalShares : 0;
-    const currentPrice = metadata.currentPrice ?? avgPrice;
+    // Real purchases: Savings plan + Buy only (NOT security transfers — those are
+    // portfolio migrations where shares move between sub-accounts, netting to zero)
+    const purchases = txs.filter((t) => t.type === 'Savings plan' || t.type === 'Buy');
+    const sells = txs.filter((t) => t.type === 'Sell');
+    // Security transfers affect share count but not cost basis
+    const transfers = txs.filter((t) => t.type === 'Security transfer');
+    // Corporate actions (splits, spin-offs, rights) — affect share count, not cost
+    const corpActions = txs.filter((t) => t.type === 'Corporate action');
+
+    // Net shares from all transaction types
+    const totalShares =
+      purchases.reduce((sum, t) => sum + t.shares, 0) +
+      transfers.reduce((sum, t) => sum + t.shares, 0) +  // can be + or -
+      corpActions.reduce((sum, t) => sum + t.shares, 0) - // can be + or -
+      sells.reduce((sum, t) => sum + t.shares, 0);
+
+    // Cost basis: only from actual purchases minus sells
+    const totalInvested =
+      purchases.reduce((sum, t) => sum + Math.abs(t.amount), 0) -
+      sells.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    // Best available price: use most recent purchase/sell price from CSV
+    const allPriced = [...purchases, ...sells].filter((t) => t.price > 0);
+    allPriced.sort((a, b) => b.date.localeCompare(a.date)); // newest first
+    const lastKnownPrice = allPriced[0]?.price ?? 0;
+
+    const avgPrice = totalShares > 0 ? Math.max(0, totalInvested) / totalShares : 0;
+    const currentPrice = metadata.currentPrice ?? (lastKnownPrice || avgPrice);
     const currentValue = totalShares * currentPrice;
     const monthly = monthlyInvestmentRate(txs);
+
+    // Skip positions with no shares (fully sold, expired rights, etc.)
+    if (totalShares <= 0) continue;
 
     positions.push({
       isin,
       name: metadata.name ?? isin,
       totalShares,
-      totalInvested,
+      totalInvested: Math.max(0, totalInvested),
       averagePrice: avgPrice,
       currentPrice,
       currentValue,
@@ -197,9 +260,9 @@ export async function analyzePortfolio(
   // Region allocation
   const regionAllocation: Record<string, { value: number; percent: number }> = {};
   for (const pos of positions) {
-    // Use CSV description for region detection when API name is just a ticker
+    // Use CSV description + ISIN prefix for region detection
     const csvDescription = byIsin.get(pos.isin)?.[0]?.description;
-    const region = determineRegion(pos.metadata ?? { name: pos.name }, csvDescription);
+    const region = determineRegion(pos.metadata ?? { name: pos.name }, csvDescription, pos.isin);
     if (!regionAllocation[region]) {
       regionAllocation[region] = { value: 0, percent: 0 };
     }

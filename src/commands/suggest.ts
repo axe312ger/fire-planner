@@ -38,20 +38,61 @@ export async function suggestCommand(csvPath: string, opts: SuggestOptions): Pro
   // Generate suggestions
   const suggestions = generateSuggestions(analysis, gap);
 
-  console.log(theme.heading('━━━ Suggestions ━━━\n'));
+  // Split into portfolio-level and per-position
+  const dividerIdx = suggestions.findIndex((s) => s.message.includes('Per-Position'));
+  const portfolioSuggestions = dividerIdx >= 0 ? suggestions.slice(0, dividerIdx) : suggestions;
+  const positionSuggestions = dividerIdx >= 0 ? suggestions.slice(dividerIdx + 1) : [];
 
-  if (suggestions.length === 0) {
-    console.log(theme.positive('  Your portfolio looks well-structured! No major suggestions.\n'));
-    return;
+  // Portfolio-level suggestions
+  console.log(theme.heading('━━━ Portfolio Suggestions ━━━\n'));
+
+  if (portfolioSuggestions.length === 0) {
+    console.log(theme.positive('  Your portfolio allocation looks good!\n'));
+  } else {
+    for (const s of portfolioSuggestions) {
+      printSuggestion(s);
+    }
   }
 
-  for (const s of suggestions) {
-    const icon = s.priority === 'high' ? chalk.red('●') : s.priority === 'medium' ? chalk.yellow('●') : chalk.gray('●');
-    const actionLabel = chalk.bold(`[${s.action.toUpperCase()}]`);
-    console.log(`  ${icon} ${actionLabel} ${s.message}`);
-    if (s.detail) {
-      console.log(theme.muted(`    ${s.detail}`));
+  // Per-position suggestions
+  if (positionSuggestions.length > 0) {
+    console.log(theme.heading('━━━ Per-Position Analysis ━━━\n'));
+
+    for (const s of positionSuggestions) {
+      printPositionSuggestion(s);
     }
-    console.log('');
+  }
+}
+
+function printSuggestion(s: { priority: string; action: string; message: string; detail?: string }): void {
+  const icon = s.priority === 'high' ? chalk.red('●') : s.priority === 'medium' ? chalk.yellow('●') : chalk.gray('●');
+  const actionLabel = actionColor(s.action, `[${s.action.toUpperCase()}]`);
+  console.log(`  ${icon} ${actionLabel} ${s.message}`);
+  if (s.detail) {
+    console.log(theme.muted(`    ${s.detail}`));
+  }
+  console.log('');
+}
+
+function printPositionSuggestion(s: { priority: string; action: string; message: string; detail?: string }): void {
+  const icon = s.priority === 'high' ? chalk.red('●') : s.priority === 'medium' ? chalk.yellow('●') : chalk.green('●');
+  const actionLabel = actionColor(s.action, `[${s.action.toUpperCase()}]`);
+  console.log(`  ${icon} ${actionLabel} ${chalk.bold(s.message)}`);
+  if (s.detail) {
+    for (const line of s.detail.split('\n')) {
+      console.log(theme.muted(`      ${line.trim()}`));
+    }
+  }
+  console.log('');
+}
+
+function actionColor(action: string, text: string): string {
+  switch (action) {
+    case 'increase': return chalk.green.bold(text);
+    case 'add': return chalk.green.bold(text);
+    case 'decrease': return chalk.yellow.bold(text);
+    case 'sell': return chalk.red.bold(text);
+    case 'switch': return chalk.magenta.bold(text);
+    default: return chalk.bold(text);
   }
 }

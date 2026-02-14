@@ -22,11 +22,16 @@ export async function analyzeCommand(csvPath: string, opts: AnalyzeOptions): Pro
   console.log('');
 
   // Summary
+  const gainLoss = analysis.totalCurrentValue - analysis.totalInvested;
+  const gainLossPct = analysis.totalInvested > 0
+    ? ((gainLoss / analysis.totalInvested) * 100).toFixed(1)
+    : '0.0';
   console.log(theme.subheading('  Overview'));
-  console.log(`    Total invested:       ${formatEur(analysis.totalInvested)}`);
-  console.log(`    Current value:        ${formatEur(analysis.totalCurrentValue)}`);
-  console.log(`    Monthly investment:   ${formatEurDetailed(analysis.totalMonthlyInvestment)}/mo`);
+  console.log(`    Cost basis:           ${formatEur(analysis.totalInvested)}`);
+  console.log(`    Est. current value:   ${formatEur(analysis.totalCurrentValue)}  (${gainLoss >= 0 ? '+' : ''}${formatEur(gainLoss)}, ${gainLoss >= 0 ? '+' : ''}${gainLossPct}%)`);
+  console.log(`    Monthly savings plans: ${formatEurDetailed(analysis.totalMonthlyInvestment)}/mo`);
   console.log(`    Positions:            ${analysis.positionCount}`);
+  console.log(theme.muted('    Note: Values use last known prices from CSV, not live market data'));
   console.log('');
 
   // Category allocation
@@ -72,7 +77,7 @@ export async function analyzeCommand(csvPath: string, opts: AnalyzeOptions): Pro
   console.log(theme.subheading('  Position Details'));
   console.log(
     chalk.bold(
-      `    ${padRight('Name', 35)} ${padRight('ISIN', 14)} ${padLeft('Invested', 10)} ${padLeft('Value', 10)} ${padLeft('Monthly', 10)} ${padLeft('TER', 7)} ${padRight('Type', 6)}`,
+      `    ${padRight('Name', 35)} ${padRight('ISIN', 14)} ${padLeft('Cost', 9)} ${padLeft('Value', 9)} ${padLeft('P/L', 8)} ${padLeft('/mo', 9)} ${padLeft('TER', 7)} ${padRight('Type', 6)}`,
     ),
   );
   console.log(theme.muted('    ' + '─'.repeat(100)));
@@ -84,9 +89,11 @@ export async function analyzeCommand(csvPath: string, opts: AnalyzeOptions): Pro
       ? pos.metadata.distributionType === 'accumulating' ? 'Acc' : 'Dist'
       : '—';
     const name = pos.name.length > 33 ? pos.name.substring(0, 33) + '..' : pos.name;
+    const pl = pos.currentValue - pos.totalInvested;
+    const plStr = pl >= 0 ? theme.positive(`+${formatEur(pl)}`) : theme.negative(formatEur(pl));
 
     console.log(
-      `    ${padRight(name, 35)} ${padRight(pos.isin, 14)} ${padLeft(formatEur(pos.totalInvested), 10)} ${padLeft(formatEur(pos.currentValue), 10)} ${padLeft(formatEurDetailed(pos.monthlyInvestment), 10)} ${padLeft(ter, 7)} ${padRight(dist, 6)}`,
+      `    ${padRight(name, 35)} ${padRight(pos.isin, 14)} ${padLeft(formatEur(pos.totalInvested), 9)} ${padLeft(formatEur(pos.currentValue), 9)} ${padLeft(plStr, 8)} ${padLeft(formatEurDetailed(pos.monthlyInvestment), 9)} ${padLeft(ter, 7)} ${padRight(dist, 6)}`,
     );
   }
 

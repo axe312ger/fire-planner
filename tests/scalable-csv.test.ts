@@ -80,24 +80,22 @@ describe('groupByIsin', () => {
 });
 
 describe('monthlyInvestmentRate', () => {
-  it('calculates monthly rate for recurring savings plans', () => {
+  it('returns most recent savings plan amount as monthly rate', () => {
     const txs = parseScalableCsvString(SAMPLE_CSV);
     const groups = groupByIsin(txs);
     const msciTxs = groups.get('IE00B4L5Y983')!;
 
     const rate = monthlyInvestmentRate(msciTxs);
-    // 3 transactions of ~€50 over Dec-Feb (3 months) = ~€50/mo
+    // Most recent savings plan is ~€50
     expect(rate).toBeCloseTo(50, -1);
   });
 
-  it('returns 0 for no savings plan transactions', () => {
+  it('returns the savings plan amount even with other transaction types', () => {
     const txs = parseScalableCsvString(SAMPLE_CSV);
     const groups = groupByIsin(txs);
     const vanguardTxs = groups.get('IE00BK5BQT80')!;
-    // Has 1 savings plan + 1 distribution
+    // Has 1 savings plan + 1 distribution — should return the savings plan amount
     const rate = monthlyInvestmentRate(vanguardTxs);
-    // 1 savings plan of ~€50 over 1 month span → but only 1 savings plan date in Feb
-    // Actually there's a savings plan in Feb and a distribution in Dec
-    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeCloseTo(50, -1);
   });
 });

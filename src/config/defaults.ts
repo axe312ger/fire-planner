@@ -6,8 +6,8 @@ export const DEFAULT_FIRE_CONFIG: FireConfig = {
   annualExpenses: 60_000,
   withdrawalRate: 0.04,
   inflationRate: 0.02,
-  currentPortfolio: 9_000,
-  currentCash: 7_500,
+  currentPortfolio: 9_381,
+  currentCash: 7_460,
   monthlyInvestment: 1_000,
   returnRates: [0.05, 0.07, 0.09],
 };

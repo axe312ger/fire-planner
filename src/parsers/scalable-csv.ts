@@ -14,7 +14,13 @@ export function parseScalableCsv(filePath: string): CsvTransaction[] {
 }
 
 export function parseScalableCsvString(raw: string): CsvTransaction[] {
-  const records = parse(raw, {
+  // Scalable Capital exports may have a leading empty-delimiter row before the real header.
+  // Strip lines that consist only of semicolons/whitespace before the actual header.
+  const lines = raw.split(/\r?\n/);
+  const headerIdx = lines.findIndex((l) => l.startsWith('date;'));
+  const cleaned = headerIdx > 0 ? lines.slice(headerIdx).join('\n') : raw;
+
+  const records = parse(cleaned, {
     delimiter: ';',
     columns: true,
     skip_empty_lines: true,
@@ -70,30 +76,20 @@ export function groupByIsin(transactions: CsvTransaction[]): Map<string, CsvTran
 }
 
 /**
- * Calculate the approximate monthly investment rate for a set of transactions.
- * Looks at savings plan transactions, calculates monthly average.
+ * Determine the current monthly savings plan rate for a position.
+ *
+ * Uses the most recent savings plan execution amount, since Scalable Capital
+ * savings plans execute a fixed amount each month. Historical averaging is
+ * unreliable because plans may have been started/stopped/changed over time,
+ * and the CSV can span years.
  */
 export function monthlyInvestmentRate(transactions: CsvTransaction[]): number {
-  const savingsPlans = transactions.filter((t) => t.type === 'Savings plan');
+  const savingsPlans = transactions
+    .filter((t) => t.type === 'Savings plan')
+    .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+
   if (savingsPlans.length === 0) return 0;
 
-  const dates = savingsPlans
-    .map((t) => new Date(t.date))
-    .filter((d) => !isNaN(d.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  if (dates.length < 2) {
-    // Only one transaction — return its absolute amount as monthly
-    return Math.abs(savingsPlans[0].amount);
-  }
-
-  const firstDate = dates[0];
-  const lastDate = dates[dates.length - 1];
-  const monthSpan =
-    (lastDate.getFullYear() - firstDate.getFullYear()) * 12 +
-    (lastDate.getMonth() - firstDate.getMonth()) +
-    1; // inclusive
-
-  const totalInvested = savingsPlans.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  return totalInvested / Math.max(1, monthSpan);
+  // Use the most recent savings plan execution as the current monthly rate
+  return Math.abs(savingsPlans[0].amount);
 }
