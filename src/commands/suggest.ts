@@ -169,11 +169,18 @@ function printRecommendation(
   console.log(theme.muted(`  Changes: ${increaseCount} increase, ${keepCount} keep, ${addCount} add new, ${cancelCount} cancel`));
   console.log(theme.muted(`  Savings plans: ${increases.length + adds.length} active (down from ${increases.length + adds.length + cancels.length})`));
 
-  // Existing positions to hold (cancelled savings plan but keep shares)
+  // Tax guidance for cancelled positions (Spanish tax resident)
   if (cancels.length > 0) {
     console.log('');
-    console.log(theme.muted('  Note: Cancel the savings plan only — keep existing shares. Don\'t sell at a loss.'));
-    console.log(theme.muted('  Consider selling profitable small positions later when tax-efficient.'));
+    console.log(theme.subheading('  Tax-efficient cleanup (Spain):'));
+    console.log(theme.muted('  1. Cancel ALL savings plans above, then sell the shares too — positions are'));
+    console.log(theme.muted('     small now, so the tax impact is minimal (19% on gains, no free allowance).'));
+    console.log(theme.muted('  2. Pair winners + losers in the same tax year to offset gains with losses.'));
+    console.log(theme.muted('  3. 2-month wash sale rule: if selling at a loss, do NOT rebuy the same ISIN'));
+    console.log(theme.muted('     within 2 months — otherwise the loss is deferred, not recognized.'));
+    console.log(theme.muted('  4. FIFO applies: oldest shares are sold first. Check your actual cost basis.'));
+    console.log(theme.muted('  5. Redirect freed capital into SC MSCI AC World (0% TER until Jun 2026).'));
+    console.log(theme.muted('  6. Declare everything in your annual Renta (Apr-Jun). Use Scalable\'s tax report.'));
   }
 
   console.log('');

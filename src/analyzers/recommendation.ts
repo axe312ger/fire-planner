@@ -193,7 +193,7 @@ export function generateRecommendation(
           targetMonthly: 0,
           change: -pos.monthlyInvestment,
           category: target.label,
-          reason: `Consolidate into preferred position — max ${maxPositions} in ${target.label}`,
+          reason: `Cancel plan + sell shares — consolidate into ${target.label}`,
         });
       }
     }
@@ -210,7 +210,7 @@ export function generateRecommendation(
         targetMonthly: 0,
         change: -pos.monthlyInvestment,
         category: categorizeForDisplay(pos.category),
-        reason: 'Not in target allocation — redirect to core ETFs',
+        reason: 'Cancel plan + sell shares — not in target allocation',
       });
     }
   }
@@ -279,7 +279,7 @@ function recommendStocks(
         targetMonthly: 0,
         change: -pos.monthlyInvestment,
         category: 'Individual Stocks',
-        reason: 'Consolidate — max 5 stock picks for FIRE focus',
+        reason: 'Cancel plan + sell shares — max 5 stock picks',
       });
     }
   }
