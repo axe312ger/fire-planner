@@ -28,6 +28,30 @@ describe('categorizeAsset', () => {
     expect(categorizeAsset('JE00B1VS3770', metadata)).toBe('commodity');
   });
 
+  it('does not misclassify WisdomTree equity ETFs as commodity', () => {
+    const metadata: AssetMetadata = {
+      name: 'WisdomTree Artificial Intelligence UCITS ETF',
+      quoteType: 'ETF',
+    };
+    expect(categorizeAsset('IE00BDVPNG13', metadata)).toBe('sector-etf');
+  });
+
+  it('classifies MSCI World Equal Weight as global-etf, not regional', () => {
+    const metadata: AssetMetadata = {
+      name: 'iShares MSCI World Equal Weight UCITS ETF',
+      quoteType: 'ETF',
+    };
+    expect(categorizeAsset('IE000OAQ44U0', metadata)).toBe('global-etf');
+  });
+
+  it('classifies MSCI World Net Zero as global-etf, not regional', () => {
+    const metadata: AssetMetadata = {
+      name: 'Amundi MSCI World Climate Net Zero Ambition PAB UCITS ETF',
+      quoteType: 'ETF',
+    };
+    expect(categorizeAsset('LU2572257124', metadata)).toBe('global-etf');
+  });
+
   it('categorizes sector ETF', () => {
     const metadata: AssetMetadata = {
       name: 'iShares Global Clean Energy UCITS ETF',
@@ -68,6 +92,15 @@ describe('determineRegion', () => {
 
   it('identifies Africa', () => {
     expect(determineRegion({ name: 'Africa ETF' })).toBe('Africa');
+  });
+
+  it('does not misclassify names containing "em " substring as Emerging Markets', () => {
+    expect(determineRegion({ name: 'Stem Inc' })).not.toBe('Emerging Markets');
+    expect(determineRegion({ name: 'System1 Group' })).not.toBe('Emerging Markets');
+  });
+
+  it('matches standalone EM abbreviation', () => {
+    expect(determineRegion({ name: 'X EM UCITS ETF' })).toBe('Emerging Markets');
   });
 });
 

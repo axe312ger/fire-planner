@@ -16,9 +16,11 @@ export function parseScalableCsv(filePath: string): CsvTransaction[] {
 export function parseScalableCsvString(raw: string): CsvTransaction[] {
   // Scalable Capital exports may have a leading empty-delimiter row before the real header.
   // Strip lines that consist only of semicolons/whitespace before the actual header.
-  const lines = raw.split(/\r?\n/);
-  const headerIdx = lines.findIndex((l) => l.startsWith('date;'));
-  const cleaned = headerIdx > 0 ? lines.slice(headerIdx).join('\n') : raw;
+  // Strip UTF-8 BOM if present
+  const noBom = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+  const lines = noBom.split(/\r?\n/);
+  const headerIdx = lines.findIndex((l) => l.toLowerCase().startsWith('date;'));
+  const cleaned = headerIdx > 0 ? lines.slice(headerIdx).join('\n') : noBom;
 
   const records = parse(cleaned, {
     delimiter: ';',
@@ -29,7 +31,7 @@ export function parseScalableCsvString(raw: string): CsvTransaction[] {
   }) as Record<string, string>[];
 
   return records
-    .filter((r) => r.isin && r.isin.trim().length > 0)
+    .filter((r) => r.isin && r.isin.trim().length > 0 && (!r.status || r.status.trim().toLowerCase() === 'executed'))
     .map((r) => ({
       date: r.date ?? '',
       time: r.time ?? '',

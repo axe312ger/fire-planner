@@ -288,7 +288,7 @@ function recommendStocks(
 }
 
 function distributeBudget(positions: Position[], totalBudget: number): number[] {
-  // Distribute proportional to current value, with minimum 25% each
+  // Distribute proportional to current value
   const totalValue = positions.reduce((s, p) => s + Math.max(p.currentValue, 1), 0);
   return positions.map((p) => {
     const proportion = Math.max(p.currentValue, 1) / totalValue;

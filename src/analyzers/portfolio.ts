@@ -28,13 +28,15 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
   }
 
   // Commodities / ETCs
+  if (quoteType === 'ETC') {
+    return 'commodity';
+  }
+  // Name-based commodity detection: only specific physical products, not equity ETFs
   if (
-    quoteType === 'ETC' ||
-    name.includes('gold') ||
-    name.includes('silver') ||
-    name.includes('commodity') ||
-    name.includes('physical') ||
-    name.includes('wisdomtree')
+    name.includes('xetra-gold') || name.includes('euwax gold') ||
+    name.includes('physical gold') || name.includes('physical silver') ||
+    name.includes('physical palladium') || name.includes('physical platinum') ||
+    (name.includes('commodity') && !name.includes('ucits') && !name.includes('etf'))
   ) {
     return 'commodity';
   }
@@ -81,6 +83,15 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
       return 'sector-etf';
     }
 
+    // Global ETFs (check BEFORE regional to avoid false matches on "net zero" or "equal weight" global funds)
+    if (
+      name.includes('world') || name.includes('global') || name.includes('all-world') ||
+      name.includes('acwi') || name.includes('msci world') || name.includes('ftse all') ||
+      name.includes('ac world') || name.includes('all world')
+    ) {
+      return 'global-etf';
+    }
+
     // Regional ETFs
     if (
       name.includes('europe') || name.includes('european') || name.includes('asia') ||
@@ -88,19 +99,9 @@ export function categorizeAsset(isin: string, metadata: AssetMetadata, csvAssetT
       name.includes('africa') || name.includes('india') || name.includes('latin') ||
       name.includes('frontier') || name.includes('pacific') || name.includes('euro stoxx') ||
       name.includes('dax') || name.includes('s&p 500') || name.includes('nasdaq') ||
-      name.includes('ftse 100') || name.includes('equal weight') ||
-      name.includes('india') || name.includes('net zero')
+      name.includes('ftse 100')
     ) {
       return 'regional-etf';
-    }
-
-    // Global ETFs
-    if (
-      name.includes('world') || name.includes('global') || name.includes('all-world') ||
-      name.includes('acwi') || name.includes('msci world') || name.includes('ftse all') ||
-      name.includes('ac world') || name.includes('all world')
-    ) {
-      return 'global-etf';
     }
 
     // Default for unclassified ETFs
@@ -127,7 +128,7 @@ export function determineRegion(metadata: AssetMetadata, csvDescription?: string
   if (name.includes('europe') || name.includes('euro stoxx') || name.includes('dax') || name.includes('ftse 100')) {
     return 'Europe';
   }
-  if (name.includes('emerging') || name.includes('em ')) {
+  if (name.includes('emerging') || name.match(/\bem\b/)) {
     return 'Emerging Markets';
   }
   if (name.includes('africa')) return 'Africa';
@@ -210,10 +211,13 @@ export async function analyzePortfolio(
       corpActions.reduce((sum, t) => sum + t.shares, 0) - // can be + or -
       sells.reduce((sum, t) => sum + t.shares, 0);
 
-    // Cost basis: only from actual purchases minus sells
-    const totalInvested =
-      purchases.reduce((sum, t) => sum + Math.abs(t.amount), 0) -
-      sells.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    // Cost basis: average cost per share * remaining shares (FIFO-compatible)
+    const totalPurchaseCost = purchases.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const totalPurchasedShares = purchases.reduce((sum, t) => sum + t.shares, 0);
+    const avgCostPerShare = totalPurchasedShares > 0 ? totalPurchaseCost / totalPurchasedShares : 0;
+    const soldShares = sells.reduce((sum, t) => sum + t.shares, 0);
+    const remainingPurchasedShares = Math.max(0, totalPurchasedShares - soldShares);
+    const totalInvested = avgCostPerShare * remainingPurchasedShares;
 
     // Best available price: use most recent purchase/sell price from CSV
     const allPriced = [...purchases, ...sells].filter((t) => t.price > 0);

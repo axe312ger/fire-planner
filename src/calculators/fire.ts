@@ -49,7 +49,7 @@ export function gapAnalysis(
   const totalPropertyCash = properties.reduce((sum, p) => sum + propertyCashNeeded(p), 0);
   const totalNeeded = adjustedFire + totalPropertyCash;
   const currentAssets = config.currentPortfolio + config.currentCash;
-  const gap = Math.max(0, totalNeeded - currentAssets);
+  const gap = totalNeeded - currentAssets;
 
   const months = years * 12;
   const reqMonthly = requiredMonthly(currentAssets, totalNeeded, returnRate, months);
@@ -63,6 +63,6 @@ export function gapAnalysis(
     gap,
     requiredMonthly: reqMonthly,
     currentMonthly: config.monthlyInvestment,
-    monthlyShortfall: Math.max(0, reqMonthly - config.monthlyInvestment),
+    monthlyShortfall: reqMonthly - config.monthlyInvestment,
   };
 }

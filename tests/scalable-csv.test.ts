@@ -99,3 +99,23 @@ describe('monthlyInvestmentRate', () => {
     expect(rate).toBeCloseTo(50, -1);
   });
 });
+
+describe('transaction filtering', () => {
+  it('excludes cancelled transactions', () => {
+    const csv = `date;time;status;reference;description;assetType;type;isin;shares;price;amount;fee;tax;currency
+2026-02-10;09:15:00;executed;REF001;Test ETF;ETF;Savings plan;IE00TEST0001;1,0;50,00;-50,00;0;0;EUR
+2026-02-11;09:15:00;cancelled;REF002;Test ETF;ETF;Savings plan;IE00TEST0001;1,0;50,00;-50,00;0;0;EUR`;
+    const txs = parseScalableCsvString(csv);
+    expect(txs.length).toBe(1);
+    expect(txs[0].status).toBe('executed');
+  });
+
+  it('handles BOM-encoded CSV', () => {
+    const bom = '\uFEFF';
+    const csv = bom + `date;time;status;reference;description;assetType;type;isin;shares;price;amount;fee;tax;currency
+2026-02-10;09:15:00;executed;REF001;Test;ETF;Savings plan;IE00TEST0001;1,0;50,00;-50,00;0;0;EUR`;
+    const txs = parseScalableCsvString(csv);
+    expect(txs.length).toBe(1);
+    expect(txs[0].isin).toBe('IE00TEST0001');
+  });
+});

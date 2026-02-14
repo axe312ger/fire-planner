@@ -98,9 +98,31 @@ describe('gapAnalysis', () => {
     const gap = gapAnalysis(config, properties, 0.07);
 
     expect(gap.fireNumber).toBe(1_500_000);
+    expect(gap.inflationAdjustedFireNumber).toBeCloseTo(1_828_492, -2);
     expect(gap.currentAssets).toBe(16_500);
-    expect(gap.gap).toBeGreaterThan(0);
+    expect(gap.gap).toBeCloseTo(1_811_992, -2);
     expect(gap.requiredMonthly).toBeGreaterThan(config.monthlyInvestment);
     expect(gap.monthlyShortfall).toBeGreaterThan(0);
+  });
+
+  it('shows surplus when current savings exceed required', () => {
+    const config = {
+      currentAge: 35,
+      targetAge: 45,
+      annualExpenses: 10_000,
+      withdrawalRate: 0.04,
+      inflationRate: 0.02,
+      currentPortfolio: 100_000,
+      currentCash: 50_000,
+      monthlyInvestment: 5_000,
+      monthlyRent: 0,
+      parentLoanYears: 10,
+      returnRates: [0.07],
+    };
+    const gap = gapAnalysis(config, [], 0.07);
+
+    expect(gap.fireNumber).toBe(250_000);
+    // With 150k starting and 5k/mo at 7%, easily exceeds 304k adjusted FIRE
+    expect(gap.monthlyShortfall).toBeLessThan(0); // surplus
   });
 });

@@ -111,7 +111,7 @@ function padLeft(str: string, width: number): string {
 }
 
 function makeBar(percent: number, maxWidth = 20): string {
-  const filled = Math.round((percent / 100) * maxWidth);
+  const filled = Math.max(0, Math.min(maxWidth, Math.round((percent / 100) * maxWidth)));
   return chalk.cyan('█'.repeat(filled)) + theme.muted('░'.repeat(maxWidth - filled));
 }
 
