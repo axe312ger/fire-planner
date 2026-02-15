@@ -135,6 +135,29 @@ export function planCommand(opts: PlanOptions): void {
     parentLoanEndYear = firstPurchaseYear + config.parentLoanYears;
   }
 
+  // Year 0: starting position
+  {
+    const startBalance = config.currentPortfolio + config.currentCash;
+    const baseFire = fireNumber(config.annualExpenses, config.withdrawalRate);
+    const startProgress = startBalance > 0 ? (startBalance / baseFire) * 100 : 0;
+    rows.push([
+      '0',
+      String(config.currentAge),
+      'Starting Position',
+      fmtNum(config.monthlyInvestment),
+      fmtNum(config.monthlyRent),
+      '0.00',
+      '0.00',
+      fmtNum(Math.max(0, config.monthlyInvestment - config.monthlyRent)),
+      ...allocation.map(() => '0.00'),
+      '0.00',
+      '0.00',
+      fmtNum(startBalance),
+      fmtNum(baseFire),
+      `${startProgress.toFixed(1)}%`,
+    ]);
+  }
+
   for (let y = 1; y <= years; y++) {
     const age = config.currentAge + y;
     const proj = scenario.projections[y - 1];
@@ -197,6 +220,8 @@ export function planCommand(opts: PlanOptions): void {
   rows.push([]);
   rows.push(['═══ SUMMARY ═══']);
   rows.push(['FIRE Number (today)', fmtNum(fireNumber(config.annualExpenses, config.withdrawalRate))]);
+  rows.push(['Starting Portfolio', fmtNum(config.currentPortfolio)]);
+  rows.push(['Starting Cash', fmtNum(config.currentCash)]);
   rows.push(['Annual Expenses', fmtNum(config.annualExpenses)]);
   rows.push(['Withdrawal Rate', `${(config.withdrawalRate * 100).toFixed(1)}%`]);
   rows.push(['Return Rate Used', `${(returnRate * 100).toFixed(0)}%`]);

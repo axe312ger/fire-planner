@@ -1,7 +1,7 @@
 import type { FireConfig, PropertyConfig } from '../types.js';
 
 export const DEFAULT_FIRE_CONFIG: FireConfig = {
-  currentAge: 35,
+  currentAge: 34,
   targetAge: 55,
   annualExpenses: 40_000,
   withdrawalRate: 0.04,
