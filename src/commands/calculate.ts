@@ -24,6 +24,7 @@ interface CalculateOptions {
   cash?: string;
   monthly?: string;
   rent?: string;
+  rentStartMonth?: string;
   parentLoanYears?: string;
   flatPrice?: string;
   flatDown?: string;
@@ -52,6 +53,7 @@ export function calculateCommand(opts: CalculateOptions): void {
     currentCash: num(opts.cash, DEFAULT_FIRE_CONFIG.currentCash),
     monthlyInvestment: num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
     monthlyRent: num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent),
+    rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
     returnRates: opts.rates
       ? opts.rates.split(',').map((r) => parseFloat(r) / 100)

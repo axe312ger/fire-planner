@@ -10,6 +10,7 @@ export interface FireConfig {
   currentCash: number;
   monthlyInvestment: number; // total monthly savings capacity (before rent/mortgage)
   monthlyRent: number; // rent paid until property purchase
+  rentStartMonth?: number; // month offset when rent begins (0 = immediately)
   parentLoanYears: number; // years to repay parent loan (interest-free)
   returnRates: number[]; // e.g. [0.05, 0.07, 0.09]
   startDate?: string; // ISO month "2026-02", default from defaults.ts

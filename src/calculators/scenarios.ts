@@ -79,6 +79,7 @@ export function buildScenario(
 ): Scenario {
   const startDate = config.startDate ?? DEFAULT_FIRE_CONFIG.startDate!;
   const birthMonth = config.birthMonth ?? DEFAULT_FIRE_CONFIG.birthMonth!;
+  const rentStartMonth = config.rentStartMonth ?? 0;
   const { year: startYear, month: startMo } = parseStartDate(startDate);
   const label = SCENARIO_LABELS[returnRate] ?? `${(returnRate * 100).toFixed(0)}% return`;
 
@@ -123,7 +124,7 @@ export function buildScenario(
     const age = computeAge(config.currentAge, startYear, startMo, m, birthMonth);
 
     // Determine monthly costs
-    const rent = m <= firstPurchaseMonth ? (config.monthlyRent ?? 0) : 0;
+    const rent = (m >= rentStartMonth && m <= firstPurchaseMonth) ? (config.monthlyRent ?? 0) : 0;
     const plPayment = (m > firstPurchaseMonth && m <= parentLoanEndMonth) ? parentLoanPayment : 0;
     const mortgage = m > firstPurchaseMonth ? mortgagePayment : 0;
 
@@ -238,16 +239,37 @@ export function buildScenario(
 
     if (firstPurchaseYear >= 1) {
       const rent = config.monthlyRent ?? 0;
-      const investing = Math.max(0, config.monthlyInvestment - rent);
-      phases.push({
-        label: 'Before flat (paying rent)',
-        fromAge: config.currentAge + 1,
-        toAge: config.currentAge + firstPurchaseYear,
-        monthlyInvesting: investing,
-        monthlyMortgage: 0,
-        monthlyParentLoan: 0,
-        monthlyRent: rent,
-      });
+      const rentStartYear = Math.ceil(rentStartMonth / 12);
+
+      // Free-rent phase (before rentStartMonth)
+      if (rentStartMonth > 1 && rentStartYear >= 1) {
+        phases.push({
+          label: 'Before rent (free period)',
+          fromAge: config.currentAge + 1,
+          toAge: config.currentAge + Math.min(rentStartYear, firstPurchaseYear),
+          monthlyInvesting: config.monthlyInvestment,
+          monthlyMortgage: 0,
+          monthlyParentLoan: 0,
+          monthlyRent: 0,
+        });
+      }
+
+      // Paying-rent phase (rentStartMonth to firstPurchaseMonth)
+      if (rentStartMonth < firstPurchaseMonth) {
+        const investing = Math.max(0, config.monthlyInvestment - rent);
+        const fromAge = rentStartMonth > 1
+          ? config.currentAge + rentStartYear
+          : config.currentAge + 1;
+        phases.push({
+          label: 'Before flat (paying rent)',
+          fromAge,
+          toAge: config.currentAge + firstPurchaseYear,
+          monthlyInvesting: investing,
+          monthlyMortgage: 0,
+          monthlyParentLoan: 0,
+          monthlyRent: rent,
+        });
+      }
     }
 
     if (totalParentLoan > 0 && config.parentLoanYears > 0) {

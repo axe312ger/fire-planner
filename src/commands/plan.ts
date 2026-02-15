@@ -33,6 +33,7 @@ interface PlanOptions {
   monthly?: string;
   rent?: string;
   parentLoanYears?: string;
+  rentStartMonth?: string;
   flatPrice?: string;
   flatDown?: string;
   flatFees?: string;
@@ -60,6 +61,7 @@ export function planCommand(opts: PlanOptions): void {
     currentCash: num(opts.cash, DEFAULT_FIRE_CONFIG.currentCash),
     monthlyInvestment: num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
     monthlyRent: num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent),
+    rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
     returnRates: DEFAULT_FIRE_CONFIG.returnRates,
     startDate: opts.startDate ?? DEFAULT_FIRE_CONFIG.startDate,
@@ -125,13 +127,14 @@ export function planCommand(opts: PlanOptions): void {
     const startBalance = config.currentPortfolio + config.currentCash;
     const baseFire = fireNumber(config.annualExpenses, config.withdrawalRate);
     const startProgress = startBalance > 0 ? (startBalance / baseFire) * 100 : 0;
-    const startInvesting = Math.max(0, config.monthlyInvestment - config.monthlyRent);
+    const rentAtStart = (config.rentStartMonth ?? 0) > 0 ? 0 : config.monthlyRent;
+    const startInvesting = Math.max(0, config.monthlyInvestment - rentAtStart);
     rows.push([
       startDate,
       String(config.currentAge),
       'Starting Position',
       fmtNum(config.monthlyInvestment),
-      fmtNum(config.monthlyRent),
+      fmtNum(rentAtStart),
       '0.00',
       '0.00',
       fmtNum(startInvesting),
