@@ -12,6 +12,7 @@ export const DEFAULT_FIRE_CONFIG: FireConfig = {
   monthlyRent: 1_400,
   rentStartMonth: 4, // rent starts in June (month 4: Mar=1, Apr=2, May=3, Jun=4)
   parentLoanYears: 10,
+  cashRate: 0.025,
   returnRates: [0.05, 0.07, 0.09],
   startDate: '2026-02',
   birthMonth: 5,

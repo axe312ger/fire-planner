@@ -116,6 +116,9 @@ export function renderPhases(config: FireConfig, phases: ScenarioPhase[]): strin
     if (phase.monthlyParentLoan > 0) {
       lines.push(`  - ${formatEurDetailed(phase.monthlyParentLoan)}/mo parent loan repayment`);
     }
+    if (phase.monthlyCashSaving > 0) {
+      lines.push(`  - ${formatEurDetailed(phase.monthlyCashSaving)}/mo cash saving (for property)`);
+    }
 
     lines.push(`  ${chalk.bold('=')} ${chalk.bold(formatEurDetailed(phase.monthlyInvesting))}/mo ${chalk.bold('→ investing for FIRE')}`);
     lines.push('');

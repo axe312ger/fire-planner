@@ -46,8 +46,12 @@ describe('buildScenario', () => {
     const scenario = buildScenario(baseConfig, [laterFlat], 0.07);
 
     const year1 = scenario.projections[0];
-    // Monthly: 4000 - 1400 rent = 2600/mo → 31,200/yr
-    expect(year1.contributions).toBeCloseTo(31_200, -2);
+    // Monthly: 4000 - 1400 rent = 2600 available
+    // Dual-track: cash saving for property consumes part (or all) of this
+    // Cash needed: 190k, currentCash: 7500, remaining: 182500, months: 36 → ~5069/mo needed
+    // Capped at available 2600/mo → all goes to cash saving, 0 to FIRE investing
+    // So contributions (FIRE investing) = 0
+    expect(year1.contributions).toBeCloseTo(0, -2);
   });
 
   it('with property that can be fully covered → no parent loan', () => {
@@ -422,5 +426,225 @@ describe('buildAllScenarios', () => {
     const scenarios = buildAllScenarios(baseConfig, []);
     expect(scenarios[2].finalBalance).toBeGreaterThan(scenarios[1].finalBalance);
     expect(scenarios[1].finalBalance).toBeGreaterThan(scenarios[0].finalBalance);
+  });
+});
+
+describe('parent loan stacking (multiple properties)', () => {
+  it('stacks parent loan payments from two properties', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 0,
+      currentCash: 0,
+      monthlyInvestment: 5_000,
+      monthlyRent: 0,
+      targetAge: 65,
+      parentLoanYears: 5,
+    };
+    const prop1: PropertyConfig = { ...flat, purchaseYear: 1, label: 'Prop 1' };
+    const prop2: PropertyConfig = { ...flat, price: 300_000, purchaseYear: 3, label: 'Prop 2' };
+
+    const scenario = buildScenario(config, [prop1, prop2], 0.07);
+
+    // After both purchased (month 37+), parent loan payment should be sum of both
+    const monthAfterBoth = scenario.monthProjections[36]; // month 37
+    const singleLoanMonth = scenario.monthProjections[12]; // month 13, only prop1 loan
+
+    // Both loans active → higher parent loan payment
+    expect(monthAfterBoth.monthlyParentLoan).toBeGreaterThan(singleLoanMonth.monthlyParentLoan);
+  });
+
+  it('second parent loan ending does not kill first', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 0,
+      currentCash: 0,
+      monthlyInvestment: 5_000,
+      monthlyRent: 0,
+      targetAge: 65,
+      parentLoanYears: 3, // short loans so they end within sim
+    };
+    const prop1: PropertyConfig = { ...flat, purchaseYear: 1, label: 'Prop 1' };
+    const prop2: PropertyConfig = { ...flat, price: 200_000, purchaseYear: 2, label: 'Prop 2' };
+
+    const scenario = buildScenario(config, [prop1, prop2], 0.07);
+
+    // Prop1 loan: month 12 + 36 = ends at month 48
+    // Prop2 loan: month 24 + 36 = ends at month 60
+    // At month 49 (after prop1 loan ends), prop2 loan should still be active
+    const afterProp1LoanEnds = scenario.monthProjections[48]; // month 49
+    expect(afterProp1LoanEnds.monthlyParentLoan).toBeGreaterThan(0);
+
+    // At month 61, both loans done
+    const afterBothLoansEnd = scenario.monthProjections[60]; // month 61
+    expect(afterBothLoansEnd.monthlyParentLoan).toBe(0);
+  });
+});
+
+describe('free-rent period phase label', () => {
+  it('labels months before rentStartMonth as Free Period', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      rentStartMonth: 4, // rent starts month 4
+    };
+    const scenario = buildScenario(config, [flat], 0.07);
+
+    // Month 1, 2, 3 should be Free Period
+    expect(scenario.monthProjections[0].phase).toBe('Free Period');
+    expect(scenario.monthProjections[1].phase).toBe('Free Period');
+    expect(scenario.monthProjections[2].phase).toBe('Free Period');
+
+    // Month 4+ (before purchase at month 12) should be Renting
+    expect(scenario.monthProjections[3].phase).toBe('Renting');
+  });
+
+  it('no free period when rentStartMonth is 0', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      rentStartMonth: 0,
+    };
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 2 };
+    const scenario = buildScenario(config, [laterFlat], 0.07);
+
+    // All pre-purchase months should be Renting (no Free Period)
+    expect(scenario.monthProjections[0].phase).toBe('Renting');
+  });
+});
+
+describe('mid-month contribution growth', () => {
+  it('includes half of contribution in growth calculation', () => {
+    // With no property, all goes to investing
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 100_000,
+      currentCash: 0,
+      monthlyInvestment: 1_000,
+      monthlyRent: 0,
+      targetAge: 36, // 1 year
+    };
+    const scenario = buildScenario(config, [], 0.12); // 1% per month
+
+    const m1 = scenario.monthProjections[0];
+    // Growth should be on (100000 + 1000/2) * 0.01 = 1005
+    expect(m1.growth).toBeCloseTo(1005, 0);
+  });
+});
+
+describe('dual-track cash + portfolio model', () => {
+  it('splits budget into cash saving and FIRE investing', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 0,
+      currentCash: 0,
+      monthlyInvestment: 4_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+    // Flat at year 2, needs 190k → 190000/24 = ~7917/mo (capped at 4000)
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 2 };
+    const scenario = buildScenario(config, [laterFlat], 0.07);
+
+    // Before purchase, monthlyCashSaving should be > 0
+    const month1 = scenario.monthProjections[0];
+    expect(month1.monthlyCashSaving).toBeGreaterThan(0);
+    expect(month1.monthlyCashSaving + month1.monthlyInvesting).toBeCloseTo(4000, -1);
+
+    // scenario.monthlyCashSaving should be set
+    expect(scenario.monthlyCashSaving).toBeGreaterThan(0);
+  });
+
+  it('cash saving stops after all properties purchased', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 50_000,
+      currentCash: 50_000,
+      monthlyInvestment: 4_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 2 };
+    const scenario = buildScenario(config, [laterFlat], 0.07);
+
+    // After purchase month (24), cash saving should be 0
+    const monthAfterPurchase = scenario.monthProjections[24]; // month 25
+    expect(monthAfterPurchase.monthlyCashSaving).toBe(0);
+  });
+
+  it('no cash saving when no properties', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 10_000,
+      currentCash: 5_000,
+      monthlyRent: 0,
+    };
+    const scenario = buildScenario(config, [], 0.07);
+
+    // Every month: no cash saving, everything to investing
+    for (const mp of scenario.monthProjections) {
+      expect(mp.monthlyCashSaving).toBe(0);
+      expect(mp.monthlyInvesting).toBe(config.monthlyInvestment);
+    }
+
+    expect(scenario.monthlyCashSaving).toBeUndefined();
+  });
+
+  it('tracks separate cash and portfolio balances', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 10_000,
+      currentCash: 5_000,
+      monthlyInvestment: 3_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 3 };
+    const scenario = buildScenario(config, [laterFlat], 0.07);
+
+    const month1 = scenario.monthProjections[0];
+    // Cash balance should grow from starting cash + cash saving + interest
+    expect(month1.cashBalance).toBeGreaterThan(5_000);
+    // Portfolio balance should grow from starting portfolio + investing + growth
+    expect(month1.portfolioBalance).toBeGreaterThan(10_000);
+    // Combined should equal endBalance
+    expect(month1.cashBalance + month1.portfolioBalance).toBeCloseTo(month1.endBalance, 2);
+  });
+
+  it('property purchase draws from cash first', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 100_000,
+      currentCash: 100_000,
+      monthlyInvestment: 5_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+    // Small property needing < cash balance
+    const cheapFlat: PropertyConfig = {
+      ...flat,
+      price: 100_000,
+      additionalCosts: 0,
+      purchaseYear: 1,
+    };
+    // Cash needed: 100k * 32% = 32k
+    const scenario = buildScenario(config, [cheapFlat], 0.07);
+
+    const purchaseMonth = scenario.monthProjections[11]; // month 12
+    // After purchase, portfolio should be largely intact (property funded from cash)
+    expect(purchaseMonth.portfolioBalance).toBeGreaterThan(90_000);
+  });
+
+  it('cash rate applies to cash balance', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 0,
+      currentCash: 120_000,
+      monthlyInvestment: 0,
+      monthlyRent: 0,
+      cashRate: 0.06, // 6% annual = 0.5% monthly
+    };
+    const scenario = buildScenario(config, [], 0.07);
+
+    // Month 1: cash growth = 120000 * 0.005 = 600
+    const m1 = scenario.monthProjections[0];
+    expect(m1.growth).toBeCloseTo(600, 0);
   });
 });

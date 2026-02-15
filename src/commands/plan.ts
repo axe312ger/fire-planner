@@ -7,6 +7,7 @@ import { fireNumber, inflationAdjustedFireNumberAtMonth, propertyCashNeeded } fr
 import { buildScenario } from '../calculators/scenarios.js';
 import { monthlyMortgagePayment } from '../calculators/mortgage.js';
 import { formatEur, formatEurDetailed, theme } from '../formatters/colors.js';
+import { renderMarkdownSummary } from '../formatters/markdown.js';
 
 /**
  * Target allocation for FIRE-optimized investing.
@@ -36,6 +37,7 @@ interface PlanOptions {
   parentLoanYears?: string;
   rentStartMonth?: string;
   keepPortfolio?: boolean;
+  cashRate?: string;
   flatPrice?: string;
   flatDown?: string;
   flatFees?: string;
@@ -47,6 +49,7 @@ interface PlanOptions {
   rate?: string;
   mortgageRate?: string;
   output?: string;
+  mdOutput?: string;
   yearly?: boolean;
   startDate?: string;
   birthMonth?: string;
@@ -68,6 +71,7 @@ export function planCommand(opts: PlanOptions): void {
     rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
     keepPortfolio: opts.keepPortfolio ?? false,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
+    cashRate: opts.cashRate !== undefined ? num(opts.cashRate, DEFAULT_FIRE_CONFIG.cashRate! * 100) / 100 : DEFAULT_FIRE_CONFIG.cashRate,
     returnRates: DEFAULT_FIRE_CONFIG.returnRates,
     startDate: opts.startDate ?? DEFAULT_FIRE_CONFIG.startDate,
     birthMonth: opts.birthMonth ? num(opts.birthMonth, DEFAULT_FIRE_CONFIG.birthMonth!) : DEFAULT_FIRE_CONFIG.birthMonth,
@@ -117,11 +121,14 @@ export function planCommand(opts: PlanOptions): void {
     'Monthly Rent',
     'Monthly Mortgage',
     'Monthly Parent Loan',
+    'Monthly Cash Saving',
     'Monthly Investing',
     ...allocation.map((a) => `${a.label} (${a.percent}%)`),
     'Contribution',
     'Growth',
+    'Cash Balance',
     'Portfolio Balance',
+    'Total Balance',
     'FIRE Target (inflation-adj)',
     'Progress %',
   ];
@@ -142,10 +149,13 @@ export function planCommand(opts: PlanOptions): void {
       fmtNum(rentAtStart),
       '0.00',
       '0.00',
+      '0.00',
       fmtNum(startInvesting),
       ...allocation.map(() => '0.00'),
       '0.00',
       '0.00',
+      fmtNum(config.currentCash),
+      fmtNum(config.currentPortfolio),
       fmtNum(startBalance),
       fmtNum(baseFire),
       `${startProgress.toFixed(1)}%`,
@@ -180,10 +190,13 @@ export function planCommand(opts: PlanOptions): void {
       fmtNum(mp.monthlyRent),
       fmtNum(mp.monthlyMortgage),
       fmtNum(mp.monthlyParentLoan),
+      fmtNum(mp.monthlyCashSaving),
       fmtNum(mp.monthlyInvesting),
       ...categoryAmounts,
       fmtNum(mp.contribution),
       fmtNum(mp.growth),
+      fmtNum(mp.cashBalance),
+      fmtNum(mp.portfolioBalance),
       fmtNum(mp.endBalance),
       fmtNum(fireTarget),
       `${progress.toFixed(1)}%`,
@@ -248,10 +261,21 @@ export function planCommand(opts: PlanOptions): void {
 
   writeFileSync(outputPath, csv, 'utf-8');
 
+  // ─── Write Markdown ───
+  const md = renderMarkdownSummary(config, properties, scenario, returnRate);
+  const mdOutputPath = opts.mdOutput
+    ? resolve(opts.mdOutput)
+    : outputPath.replace(/\.csv$/, '.md');
+
+  writeFileSync(mdOutputPath, md, 'utf-8');
+
   // ─── Terminal output ───
   console.log(theme.heading('\n━━━ FIRE Investment Plan ━━━\n'));
   console.log(`  Return rate: ${(returnRate * 100).toFixed(0)}% | FIRE target: ${formatEur(fireNumber(config.annualExpenses, config.withdrawalRate))}`);
   console.log(`  Parent loan: ${formatEur(parentLoanTotal)} (${config.parentLoanYears}yr @ ${formatEurDetailed(monthlyParentLoan)}/mo)`);
+  if (scenario.monthlyCashSaving) {
+    console.log(`  Cash saving: ${formatEurDetailed(scenario.monthlyCashSaving)}/mo → property (${((config.cashRate ?? 0.025) * 100).toFixed(1)}% cash rate)`);
+  }
   console.log(`  Granularity: ${yearly ? 'yearly (--yearly)' : 'monthly'} | ${projections.length} data points`);
   console.log('');
 
@@ -306,7 +330,7 @@ export function planCommand(opts: PlanOptions): void {
     console.log(`  FIRE reached: ${scenario.fireReachedDate} (age ${scenario.fireReachedAge})`);
   }
   console.log('');
-  console.log(theme.positive(`  ✓ Plan exported to: ${outputPath}`));
+  console.log(theme.positive(`  ✓ Plan exported to: ${outputPath} + ${mdOutputPath}`));
   console.log('');
 }
 

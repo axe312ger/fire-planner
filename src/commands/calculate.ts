@@ -4,6 +4,7 @@ import { fireNumber, propertyCashNeeded } from '../calculators/fire.js';
 import { gapAnalysis } from '../calculators/fire.js';
 import { calculateMortgage } from '../calculators/mortgage.js';
 import { buildAllScenarios } from '../calculators/scenarios.js';
+import { formatEur } from '../formatters/colors.js';
 import {
   renderSummaryHeader,
   renderScenarioTable,
@@ -28,6 +29,7 @@ interface CalculateOptions {
   rentStartMonth?: string;
   keepPortfolio?: boolean;
   parentLoanYears?: string;
+  cashRate?: string;
   flatPrice?: string;
   flatDown?: string;
   flatFees?: string;
@@ -60,6 +62,7 @@ export function calculateCommand(opts: CalculateOptions): void {
     rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
     keepPortfolio: opts.keepPortfolio ?? false,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
+    cashRate: opts.cashRate !== undefined ? num(opts.cashRate, DEFAULT_FIRE_CONFIG.cashRate! * 100) / 100 : DEFAULT_FIRE_CONFIG.cashRate,
     returnRates: opts.rates
       ? opts.rates.split(',').map((r) => parseFloat(r) / 100)
       : DEFAULT_FIRE_CONFIG.returnRates,
@@ -107,6 +110,18 @@ export function calculateCommand(opts: CalculateOptions): void {
   const fireNum = fireNumber(config.annualExpenses, config.withdrawalRate);
   const currentAssets = config.currentPortfolio + config.currentCash;
   console.log(renderSummaryHeader(fireNum, currentAssets, config.monthlyInvestment, config.targetAge, config.currentAge));
+
+  // Show budget split if there's a cash saving component
+  const moderateScenarioForSplit = buildAllScenarios(config, properties)[Math.floor(config.returnRates.length / 2)];
+  if (moderateScenarioForSplit?.monthlyCashSaving) {
+    const cs = moderateScenarioForSplit.monthlyCashSaving;
+    const availPrePurchase = config.monthlyInvestment - (config.monthlyRent ?? 0);
+    const investing = Math.max(0, availPrePurchase - cs);
+    console.log(`\n  Monthly Budget Split (pre-purchase):`);
+    console.log(`    Cash saving (for property): ${formatEur(cs)}/mo`);
+    console.log(`    FIRE investing:             ${formatEur(investing)}/mo`);
+    console.log(`    Cash rate:                  ${((config.cashRate ?? 0.025) * 100).toFixed(1)}%`);
+  }
 
   // Detailed property purchase breakdown
   if (properties.length > 0) {

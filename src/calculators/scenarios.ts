@@ -101,35 +101,71 @@ export function buildScenario(
     ? Math.min(...properties.map((p) => p.purchaseMonth ?? p.purchaseYear * 12))
     : Infinity;
 
+  // ─── Dual-track: auto-calculate monthly cash saving for properties ───
+  const lastPurchaseMonth = properties.length > 0
+    ? Math.max(...properties.map((p) => p.purchaseMonth ?? p.purchaseYear * 12))
+    : 0;
+
+  let availableCash = config.currentCash;
+  let totalMonthlyCashSaving = 0;
+  for (const prop of properties) {
+    const purchaseMonth = prop.purchaseMonth ?? prop.purchaseYear * 12;
+    const cashNeeded = propertyCashNeeded(prop);
+    const remainingCash = Math.max(0, cashNeeded - availableCash);
+    availableCash = Math.max(0, availableCash - cashNeeded);
+    if (purchaseMonth > 0 && remainingCash > 0) {
+      totalMonthlyCashSaving += remainingCash / purchaseMonth;
+    }
+  }
+
+  // ─── Dual-track balances ───
+  let cashBalance = config.currentCash;
+  let portfolioBalance = config.currentPortfolio;
+
   const monthProjections: MonthProjection[] = [];
-  let balance = config.currentPortfolio + config.currentCash;
+  let balance = cashBalance + portfolioBalance;
   let fireReachedMonth: number | null = null;
   let fireReachedDate: string | null = null;
   let fireReachedYear: number | null = null;
   let fireReachedAge: number | null = null;
   let feasible = true;
 
-  // Monthly budget tracking — support multiple mortgages
+  // Monthly budget tracking — support multiple mortgages and parent loans
   const activeMortgages: { payment: number; endMonth: number }[] = [];
-  let parentLoanPayment = 0;
-  let parentLoanEndMonth = 0;
+  const activeParentLoans: { payment: number; startMonth: number; endMonth: number }[] = [];
   let totalParentLoan = 0;
 
   const monthlyReturnRate = returnRate / 12;
+  const cashRate = (config.cashRate ?? 0.025) / 12;
 
   for (let m = 1; m <= totalMonths; m++) {
-    const startBalance = balance;
+    const startBalance = cashBalance + portfolioBalance;
     const date = addMonths(startYear, startMo, m);
     const dateStr = formatDate(date);
     const age = computeAge(config.currentAge, startYear, startMo, m, birthMonth);
 
     // Determine monthly costs
     const rent = (m >= rentStartMonth && m < firstPurchaseMonth) ? (config.monthlyRent ?? 0) : 0;
-    const plPayment = (m > firstPurchaseMonth && m <= parentLoanEndMonth) ? parentLoanPayment : 0;
+    const plPayment = activeParentLoans.reduce(
+      (sum, pl) => sum + (m > pl.startMonth && m <= pl.endMonth ? pl.payment : 0), 0,
+    );
     const mortgage = activeMortgages.reduce((sum, mtg) => sum + (m <= mtg.endMonth ? mtg.payment : 0), 0);
 
-    const monthlyInvesting = Math.max(0, config.monthlyInvestment - rent - mortgage - plPayment);
-    const growth = startBalance * monthlyReturnRate;
+    const availableForSavingAndInvesting = Math.max(0,
+      config.monthlyInvestment - rent - mortgage - plPayment,
+    );
+
+    // Cash saving stops after all properties purchased
+    const cashSaving = (m <= lastPurchaseMonth)
+      ? Math.min(totalMonthlyCashSaving, availableForSavingAndInvesting)
+      : 0;
+
+    const monthlyInvesting = Math.max(0, availableForSavingAndInvesting - cashSaving);
+
+    // Growth on each track
+    const portfolioGrowth = (portfolioBalance + monthlyInvesting / 2) * monthlyReturnRate;
+    const cashGrowth = cashBalance * cashRate;
+    const growth = portfolioGrowth + cashGrowth;
 
     let propertyWithdrawal = 0;
     let propertyLabel: string | undefined;
@@ -145,14 +181,24 @@ export function buildScenario(
         parentLoan = cashNeeded;
         totalParentLoan += parentLoan;
       } else {
-        const availableBalance = startBalance + monthlyInvesting + growth;
+        // Withdraw from cash first, then portfolio if needed
+        const availableCashNow = cashBalance + cashSaving + cashGrowth;
+        const fromCash = Math.min(availableCashNow, cashNeeded);
+        const fromPortfolio = Math.max(0, cashNeeded - fromCash);
 
-        if (availableBalance >= cashNeeded) {
-          propertyWithdrawal = cashNeeded;
-        } else {
-          parentLoan = cashNeeded - Math.max(0, availableBalance);
-          propertyWithdrawal = Math.max(0, availableBalance);
+        if (fromPortfolio > portfolioBalance + monthlyInvesting + portfolioGrowth) {
+          // Not enough in either — parent loan covers the rest
+          const availableTotal = availableCashNow + portfolioBalance + monthlyInvesting + portfolioGrowth;
+          parentLoan = Math.max(0, cashNeeded - availableTotal);
           totalParentLoan += parentLoan;
+          propertyWithdrawal = cashNeeded - parentLoan;
+
+          cashBalance = 0;
+          portfolioBalance = 0;
+        } else {
+          propertyWithdrawal = cashNeeded;
+          cashBalance = availableCashNow - fromCash;
+          portfolioBalance = portfolioBalance + monthlyInvesting + portfolioGrowth - fromPortfolio;
         }
       }
 
@@ -162,29 +208,39 @@ export function buildScenario(
       activeMortgages.push({ payment: newMortgagePayment, endMonth: m + prop.mortgageTerm * 12 });
 
       if (parentLoan > 0 && config.parentLoanYears > 0) {
-        parentLoanPayment = parentLoan / (config.parentLoanYears * 12);
-        parentLoanEndMonth = m + config.parentLoanYears * 12;
+        const plPmt = parentLoan / (config.parentLoanYears * 12);
+        activeParentLoans.push({ payment: plPmt, startMonth: m, endMonth: m + config.parentLoanYears * 12 });
       }
+
+      // If keepPortfolio, apply growth + contributions normally
+      if (config.keepPortfolio) {
+        cashBalance = cashBalance + cashSaving + cashGrowth;
+        portfolioBalance = portfolioBalance + monthlyInvesting + portfolioGrowth;
+      }
+    } else {
+      // No property purchase this month — normal accumulation
+      cashBalance = cashBalance + cashSaving + cashGrowth;
+      portfolioBalance = portfolioBalance + monthlyInvesting + portfolioGrowth;
     }
 
-    // Check if parent loan just ended
-    if (m === parentLoanEndMonth + 1) {
-      parentLoanPayment = 0;
-    }
-
-    balance = startBalance + monthlyInvesting + growth - propertyWithdrawal;
+    balance = cashBalance + portfolioBalance;
 
     if (balance < 0) {
       feasible = false;
+      cashBalance = 0;
+      portfolioBalance = 0;
       balance = 0;
     }
 
     // Determine phase label
     const anyMortgageActive = activeMortgages.some(mtg => m <= mtg.endMonth);
+    const anyParentLoanActive = activeParentLoans.some(pl => m > pl.startMonth && m <= pl.endMonth);
     let phase: string;
-    if (m <= firstPurchaseMonth) {
+    if (m < rentStartMonth && m < firstPurchaseMonth) {
+      phase = 'Free Period';
+    } else if (m < firstPurchaseMonth) {
       phase = 'Renting';
-    } else if (m <= parentLoanEndMonth) {
+    } else if (anyParentLoanActive) {
       phase = 'Mortgage + Parent Loan';
     } else if (anyMortgageActive) {
       phase = 'Mortgage Only';
@@ -221,6 +277,9 @@ export function buildScenario(
       propertyLabel,
       parentLoan: parentLoan > 0 ? parentLoan : undefined,
       endBalance: balance,
+      cashBalance,
+      portfolioBalance,
+      monthlyCashSaving: cashSaving,
       monthlyRent: rent,
       monthlyMortgage: mortgage,
       monthlyParentLoan: plPayment,
@@ -235,12 +294,11 @@ export function buildScenario(
   const phases: ScenarioPhase[] = [];
   const years = config.targetAge - config.currentAge;
 
+  const parentLoanEndMonth = activeParentLoans.length > 0
+    ? Math.max(...activeParentLoans.map(pl => pl.endMonth))
+    : 0;
+
   if (properties.length > 0 && firstPurchaseMonth <= totalMonths) {
-    const firstProp = properties.find(
-      (p) => (p.purchaseMonth ?? p.purchaseYear * 12) === firstPurchaseMonth,
-    )!;
-    const loanAmount = firstProp.price * (1 - firstProp.downPaymentPercent / 100);
-    const mortgagePmt = monthlyMortgagePayment(loanAmount, firstProp.mortgageRate, firstProp.mortgageTerm);
     const parentRepayment = totalParentLoan > 0
       ? totalParentLoan / (config.parentLoanYears * 12)
       : 0;
@@ -253,11 +311,14 @@ export function buildScenario(
 
       // Free-rent phase (before rentStartMonth)
       if (rentStartMonth > 1 && rentStartYear >= 1) {
+        const freeCash = Math.min(totalMonthlyCashSaving, config.monthlyInvestment);
+        const freeInvesting = Math.max(0, config.monthlyInvestment - freeCash);
         phases.push({
           label: 'Before rent (free period)',
           fromAge: config.currentAge + 1,
           toAge: config.currentAge + Math.min(rentStartYear, firstPurchaseYear),
-          monthlyInvesting: config.monthlyInvestment,
+          monthlyInvesting: freeInvesting,
+          monthlyCashSaving: freeCash,
           monthlyMortgage: 0,
           monthlyParentLoan: 0,
           monthlyRent: 0,
@@ -266,7 +327,9 @@ export function buildScenario(
 
       // Paying-rent phase (rentStartMonth to firstPurchaseMonth)
       if (rentStartMonth < firstPurchaseMonth) {
-        const investing = Math.max(0, config.monthlyInvestment - rent);
+        const availForPhase = Math.max(0, config.monthlyInvestment - rent);
+        const phaseCash = Math.min(totalMonthlyCashSaving, availForPhase);
+        const investing = Math.max(0, availForPhase - phaseCash);
         const fromAge = rentStartMonth > 1
           ? config.currentAge + rentStartYear
           : config.currentAge + 1;
@@ -275,6 +338,7 @@ export function buildScenario(
           fromAge,
           toAge: config.currentAge + firstPurchaseYear,
           monthlyInvesting: investing,
+          monthlyCashSaving: phaseCash,
           monthlyMortgage: 0,
           monthlyParentLoan: 0,
           monthlyRent: rent,
@@ -296,6 +360,7 @@ export function buildScenario(
         fromAge: config.currentAge + firstPurchaseYear + 1,
         toAge: Math.min(plEndAge, mortgageEndAge),
         monthlyInvesting: investing,
+        monthlyCashSaving: 0,
         monthlyMortgage: totalMortgagePmt,
         monthlyParentLoan: parentRepayment,
         monthlyRent: 0,
@@ -308,6 +373,7 @@ export function buildScenario(
           fromAge: plEndAge + 1,
           toAge: mortgageEndAge,
           monthlyInvesting: investing2,
+          monthlyCashSaving: 0,
           monthlyMortgage: totalMortgagePmt,
           monthlyParentLoan: 0,
           monthlyRent: 0,
@@ -320,6 +386,7 @@ export function buildScenario(
         fromAge: config.currentAge + firstPurchaseYear + 1,
         toAge: mortgageEndAge,
         monthlyInvesting: investing,
+        monthlyCashSaving: 0,
         monthlyMortgage: totalMortgagePmt,
         monthlyParentLoan: 0,
         monthlyRent: 0,
@@ -333,6 +400,7 @@ export function buildScenario(
         fromAge: mortgageEndAge + 1,
         toAge: config.targetAge,
         monthlyInvesting: config.monthlyInvestment,
+        monthlyCashSaving: 0,
         monthlyMortgage: 0,
         monthlyParentLoan: 0,
         monthlyRent: 0,
@@ -352,6 +420,7 @@ export function buildScenario(
     finalBalance: balance,
     feasible,
     parentLoanTotal: totalParentLoan > 0 ? totalParentLoan : undefined,
+    monthlyCashSaving: totalMonthlyCashSaving > 0 ? totalMonthlyCashSaving : undefined,
     phases: phases.length > 0 ? phases : undefined,
   };
 }

@@ -13,6 +13,7 @@ export interface FireConfig {
   rentStartMonth?: number; // month offset when rent begins (0 = immediately)
   keepPortfolio?: boolean; // if true, portfolio is not used for property purchases
   parentLoanYears: number; // years to repay parent loan (interest-free)
+  cashRate?: number; // annual interest on cash savings (default 2.5%)
   returnRates: number[]; // e.g. [0.05, 0.07, 0.09]
   startDate?: string; // ISO month "2026-02", default from defaults.ts
   birthMonth?: number; // 1-12, default 5 (May)
@@ -35,13 +36,16 @@ export interface MonthProjection {
   date: string;            // "2026-03", "2026-04"...
   age: number;             // integer age (changes at birthday month)
   phase: string;           // "Renting", "Mortgage + Parent Loan", "Mortgage Only"
-  startBalance: number;
-  contribution: number;    // this month's investment
-  growth: number;          // this month's portfolio growth
+  startBalance: number;    // combined total (cash + portfolio)
+  contribution: number;    // this month's FIRE investment
+  growth: number;          // this month's total growth (portfolio + cash)
   propertyWithdrawal: number;
   propertyLabel?: string;
   parentLoan?: number;
-  endBalance: number;
+  endBalance: number;      // combined total (cash + portfolio)
+  cashBalance: number;     // cash saved for property
+  portfolioBalance: number; // FIRE investment portfolio
+  monthlyCashSaving: number; // cash set aside this month for property
   monthlyRent: number;
   monthlyMortgage: number;
   monthlyParentLoan: number;
@@ -72,6 +76,7 @@ export interface Scenario {
   finalBalance: number;
   feasible: boolean;
   parentLoanTotal?: number; // Total borrowed from parents for all properties
+  monthlyCashSaving?: number; // auto-calculated monthly cash saving for property
   phases?: ScenarioPhase[]; // Monthly budget breakdown per phase
 }
 
@@ -80,6 +85,7 @@ export interface ScenarioPhase {
   fromAge: number;
   toAge: number;
   monthlyInvesting: number;
+  monthlyCashSaving: number;
   monthlyMortgage: number;
   monthlyParentLoan: number;
   monthlyRent: number;
