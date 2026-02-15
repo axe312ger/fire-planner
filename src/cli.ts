@@ -42,6 +42,8 @@ program
   .option('--finca-year <n>', `Year to buy finca, offset from now (default: ${fi.purchaseYear})`)
   .option('--rates <list>', `Return rates to model, comma-separated % (default: ${d.returnRates.map((r) => r * 100).join(',')})`)
   .option('--mortgage-rate <n>', `Annual mortgage rate % (default: ${f.mortgageRate})`)
+  .option('--start-date <YYYY-MM>', `Start date ISO month (default: ${d.startDate})`)
+  .option('--birth-month <n>', `Birth month 1-12 (default: ${d.birthMonth})`)
   .action(calculateCommand);
 
 program
@@ -65,6 +67,10 @@ program
   .option('--rate <n>', `Return rate % for plan (default: 7)`)
   .option('--mortgage-rate <n>', `Mortgage rate % (default: ${f.mortgageRate})`)
   .option('-o, --output <path>', 'Output CSV file path (default: ./fire-plan.csv)')
+  .option('--yearly', 'Emit only year-end rows (every 12th month)')
+  .option('--start-date <YYYY-MM>', `Start date ISO month (default: ${d.startDate})`)
+  .option('--birth-month <n>', `Birth month 1-12 (default: ${d.birthMonth})`)
+  .option('--flat-month <n>', 'Flat purchase month offset (overrides --flat-year)')
   .action(planCommand);
 
 program

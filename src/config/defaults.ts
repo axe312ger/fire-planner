@@ -12,6 +12,8 @@ export const DEFAULT_FIRE_CONFIG: FireConfig = {
   monthlyRent: 1_400,
   parentLoanYears: 10,
   returnRates: [0.05, 0.07, 0.09],
+  startDate: '2026-02',
+  birthMonth: 5,
 };
 
 export const DEFAULT_FLAT: PropertyConfig = {

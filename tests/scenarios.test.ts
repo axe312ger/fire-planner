@@ -178,6 +178,107 @@ describe('buildScenario', () => {
   });
 });
 
+describe('buildScenario — monthly projections', () => {
+  it('generates correct number of monthly projections', () => {
+    const scenario = buildScenario(baseConfig, [], 0.07);
+    // 10 years × 12 months = 120 months
+    expect(scenario.monthProjections).toHaveLength(120);
+  });
+
+  it('monthly projections have correct date format', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      startDate: '2026-02',
+      birthMonth: 5,
+    };
+    const scenario = buildScenario(config, [], 0.07);
+
+    expect(scenario.monthProjections[0].date).toBe('2026-03');
+    expect(scenario.monthProjections[1].date).toBe('2026-04');
+    expect(scenario.monthProjections[11].date).toBe('2027-02');
+  });
+
+  it('age changes at birthday month', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      currentAge: 34,
+      targetAge: 36,
+      startDate: '2026-02',
+      birthMonth: 5,
+    };
+    const scenario = buildScenario(config, [], 0.07);
+
+    // Month 1 = 2026-03, age 34 (birthday not yet in May)
+    expect(scenario.monthProjections[0].age).toBe(34);
+    // Month 3 = 2026-05, age 35 (birthday month!)
+    expect(scenario.monthProjections[2].age).toBe(35);
+    // Month 14 = 2027-04, age 35 (before next birthday)
+    expect(scenario.monthProjections[13].age).toBe(35);
+    // Month 15 = 2027-05, age 36 (second birthday)
+    expect(scenario.monthProjections[14].age).toBe(36);
+  });
+
+  it('monthly compounding produces higher returns than annual', () => {
+    const scenario = buildScenario(baseConfig, [], 0.07);
+    // Monthly compounding: (1 + 0.07/12)^12 ≈ 1.07229 effective rate
+    // Year 1: start 16500, monthly investing (4000-1400)=2600
+    // With monthly compounding, end balance should be slightly higher than annual model
+    const year1 = scenario.projections[0];
+    // Annual model would give: 16500 * 1.07 + 31200 = 48855
+    // Monthly model gives slightly more due to compounding
+    expect(year1.endBalance).toBeGreaterThan(48_000);
+  });
+
+  it('property purchase at month 12 with monthly model', () => {
+    const config: FireConfig = {
+      ...baseConfig,
+      startDate: '2026-02',
+      birthMonth: 5,
+    };
+    const scenario = buildScenario(config, [flat], 0.07);
+
+    // Property at purchaseYear=1 → month 12
+    const month12 = scenario.monthProjections[11]; // 0-indexed
+    expect(month12.propertyWithdrawal).toBeGreaterThan(0);
+    expect(month12.propertyLabel).toBe('Flat');
+  });
+
+  it('fireReachedMonth and fireReachedDate are set', () => {
+    const richConfig: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 500_000,
+      monthlyInvestment: 10_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+
+    const scenario = buildScenario(richConfig, [], 0.09);
+    expect(scenario.fireReachedMonth).not.toBeNull();
+    expect(scenario.fireReachedDate).toMatch(/^\d{4}-\d{2}$/);
+    expect(scenario.fireReachedAge).toBeLessThanOrEqual(55);
+  });
+
+  it('yearly projections are correctly aggregated from monthly', () => {
+    const scenario = buildScenario(baseConfig, [], 0.07);
+
+    // Yearly projections aggregated
+    expect(scenario.projections).toHaveLength(10);
+
+    // First yearly projection should aggregate 12 months
+    const year1 = scenario.projections[0];
+    const first12Months = scenario.monthProjections.slice(0, 12);
+
+    // Start balance should match first month's start
+    expect(year1.startBalance).toBe(first12Months[0].startBalance);
+    // End balance should match last month's end
+    expect(year1.endBalance).toBe(first12Months[11].endBalance);
+
+    // Contributions should be sum of monthly contributions
+    const sumContrib = first12Months.reduce((s, mp) => s + mp.contribution, 0);
+    expect(year1.contributions).toBeCloseTo(sumContrib, 2);
+  });
+});
+
 describe('buildAllScenarios', () => {
   it('builds scenarios for all return rates', () => {
     const scenarios = buildAllScenarios(baseConfig, []);

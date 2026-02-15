@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireNumber, inflationAdjustedFireNumber, propertyCashNeeded, gapAnalysis } from '../src/calculators/fire.js';
+import { fireNumber, inflationAdjustedFireNumber, inflationAdjustedFireNumberAtMonth, propertyCashNeeded, gapAnalysis } from '../src/calculators/fire.js';
 import type { PropertyConfig } from '../src/types.js';
 
 describe('fireNumber', () => {
@@ -29,6 +29,27 @@ describe('inflationAdjustedFireNumber', () => {
     const basic = fireNumber(60_000, 0.04);
     const adjusted = inflationAdjustedFireNumber(60_000, 0.04, 0, 10);
     expect(adjusted).toBe(basic);
+  });
+});
+
+describe('inflationAdjustedFireNumberAtMonth', () => {
+  it('at 12 months equals 1-year inflation adjustment', () => {
+    const atYear = inflationAdjustedFireNumber(60_000, 0.04, 0.02, 1);
+    const atMonth = inflationAdjustedFireNumberAtMonth(60_000, 0.04, 0.02, 12);
+    expect(atMonth).toBeCloseTo(atYear, 2);
+  });
+
+  it('at 120 months equals 10-year inflation adjustment', () => {
+    const atYear = inflationAdjustedFireNumber(60_000, 0.04, 0.02, 10);
+    const atMonth = inflationAdjustedFireNumberAtMonth(60_000, 0.04, 0.02, 120);
+    expect(atMonth).toBeCloseTo(atYear, 2);
+  });
+
+  it('at 6 months gives fractional year inflation', () => {
+    // 60000 * (1.02)^0.5 / 0.04
+    const expected = 60_000 * Math.pow(1.02, 0.5) / 0.04;
+    const result = inflationAdjustedFireNumberAtMonth(60_000, 0.04, 0.02, 6);
+    expect(result).toBeCloseTo(expected, 2);
   });
 });
 

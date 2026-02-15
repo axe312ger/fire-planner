@@ -1,17 +1,69 @@
 import type {
   FireConfig,
+  MonthProjection,
   PropertyConfig,
   Scenario,
   ScenarioPhase,
   YearProjection,
 } from '../types.js';
-import { inflationAdjustedFireNumber } from './fire.js';
+import { inflationAdjustedFireNumberAtMonth } from './fire.js';
 import { propertyCashNeeded } from './fire.js';
 import { monthlyMortgagePayment } from './mortgage.js';
-import { SCENARIO_LABELS } from '../config/defaults.js';
+import { SCENARIO_LABELS, DEFAULT_FIRE_CONFIG } from '../config/defaults.js';
+
+// ─── Date helpers ───
+
+function parseStartDate(startDate: string): { year: number; month: number } {
+  const [y, m] = startDate.split('-').map(Number);
+  return { year: y, month: m };
+}
+
+function addMonths(startYear: number, startMo: number, offset: number): { year: number; month: number } {
+  const totalMonths = (startYear * 12 + (startMo - 1)) + offset;
+  return { year: Math.floor(totalMonths / 12), month: (totalMonths % 12) + 1 };
+}
+
+function formatDate(d: { year: number; month: number }): string {
+  return `${d.year}-${String(d.month).padStart(2, '0')}`;
+}
+
+function computeAge(
+  currentAge: number,
+  startYear: number,
+  startMo: number,
+  monthOffset: number,
+  birthMonth: number,
+): number {
+  const d = addMonths(startYear, startMo, monthOffset);
+  // Years elapsed since start
+  const yearsElapsed = d.year - startYear + (d.month >= startMo ? 0 : -1);
+  // At start (offset=0), age = currentAge. Age increments at each birthday month.
+  // Calculate the date and see how many birthdays have passed since start.
+  const startTotal = startYear * 12 + (startMo - 1);
+  const curTotal = startTotal + monthOffset;
+  const curYear = Math.floor(curTotal / 12);
+  const curMo = (curTotal % 12) + 1;
+
+  // How many birthdays have passed since the start date?
+  // Birthday in year Y happens at month birthMonth of year Y.
+  // Start: startYear-startMo. Current: curYear-curMo.
+  // The first possible birthday is: if startMo <= birthMonth, then startYear-birthMonth.
+  //   else startYear+1-birthMonth.
+  let birthdays = 0;
+  const startYearBirthday = startMo <= birthMonth ? startYear : startYear + 1;
+  for (let by = startYearBirthday; ; by++) {
+    const bTotal = by * 12 + (birthMonth - 1);
+    if (bTotal > curTotal) break;
+    if (bTotal >= startTotal) birthdays++;
+  }
+
+  return currentAge + birthdays;
+}
+
+// ─── Core monthly engine ───
 
 /**
- * Build a year-by-year projection for a given return rate.
+ * Build a month-by-month projection for a given return rate.
  *
  * Models three financial phases:
  * 1. Pre-purchase: savings reduced by rent
@@ -25,58 +77,69 @@ export function buildScenario(
   properties: PropertyConfig[],
   returnRate: number,
 ): Scenario {
-  const years = config.targetAge - config.currentAge;
+  const startDate = config.startDate ?? DEFAULT_FIRE_CONFIG.startDate!;
+  const birthMonth = config.birthMonth ?? DEFAULT_FIRE_CONFIG.birthMonth!;
+  const { year: startYear, month: startMo } = parseStartDate(startDate);
   const label = SCENARIO_LABELS[returnRate] ?? `${(returnRate * 100).toFixed(0)}% return`;
 
-  // Build property data map: yearOffset → PropertyConfig
-  const propertyMap = new Map<number, PropertyConfig>();
+  // Calculate total months from start to target age birthday
+  // At start, age = currentAge. Target age is reached at birthday month in the year
+  // when currentAge + elapsed_years = targetAge.
+  const yearsToTarget = config.targetAge - config.currentAge;
+  const totalMonths = yearsToTarget * 12;
+
+  // Build property data map: monthOffset → PropertyConfig
+  const propertyMonthMap = new Map<number, PropertyConfig>();
   for (const prop of properties) {
-    propertyMap.set(prop.purchaseYear, prop);
+    const purchaseMonth = prop.purchaseMonth ?? prop.purchaseYear * 12;
+    propertyMonthMap.set(purchaseMonth, prop);
   }
 
-  const projections: YearProjection[] = [];
+  // Track first property purchase month to know when rent stops
+  const firstPurchaseMonth = properties.length > 0
+    ? Math.min(...properties.map((p) => p.purchaseMonth ?? p.purchaseYear * 12))
+    : Infinity;
+
+  const monthProjections: MonthProjection[] = [];
   let balance = config.currentPortfolio + config.currentCash;
+  let fireReachedMonth: number | null = null;
+  let fireReachedDate: string | null = null;
   let fireReachedYear: number | null = null;
   let fireReachedAge: number | null = null;
   let feasible = true;
 
   // Monthly budget tracking
-  let monthlyMortgage = 0;
-  let monthlyParentLoan = 0;
-  let parentLoanEndYear = 0; // year when parent loan is fully repaid
+  let mortgagePayment = 0;
+  let parentLoanPayment = 0;
+  let parentLoanEndMonth = 0;
   let totalParentLoan = 0;
 
-  const phases: ScenarioPhase[] = [];
+  const monthlyReturnRate = returnRate / 12;
 
-  // Track first property purchase year to know when rent stops
-  const firstPurchaseYear = properties.length > 0
-    ? Math.min(...properties.map((p) => p.purchaseYear))
-    : Infinity;
-
-  for (let y = 1; y <= years; y++) {
+  for (let m = 1; m <= totalMonths; m++) {
     const startBalance = balance;
+    const date = addMonths(startYear, startMo, m);
+    const dateStr = formatDate(date);
+    const age = computeAge(config.currentAge, startYear, startMo, m, birthMonth);
 
-    // Determine monthly savings for this year
-    const rent = y <= firstPurchaseYear ? (config.monthlyRent ?? 0) : 0;
-    const parentLoanPayment = (y > firstPurchaseYear && y <= parentLoanEndYear) ? monthlyParentLoan : 0;
-    const mortgage = y > firstPurchaseYear ? monthlyMortgage : 0;
+    // Determine monthly costs
+    const rent = m <= firstPurchaseMonth ? (config.monthlyRent ?? 0) : 0;
+    const plPayment = (m > firstPurchaseMonth && m <= parentLoanEndMonth) ? parentLoanPayment : 0;
+    const mortgage = m > firstPurchaseMonth ? mortgagePayment : 0;
 
-    const monthlySavings = Math.max(0, config.monthlyInvestment - rent - mortgage - parentLoanPayment);
-    const annualContribution = monthlySavings * 12;
-    const growth = startBalance * returnRate;
+    const monthlyInvesting = Math.max(0, config.monthlyInvestment - rent - mortgage - plPayment);
+    const growth = startBalance * monthlyReturnRate;
 
     let propertyWithdrawal = 0;
     let propertyLabel: string | undefined;
     let parentLoan = 0;
 
-    const prop = propertyMap.get(y);
+    const prop = propertyMonthMap.get(m);
     if (prop) {
       const cashNeeded = propertyCashNeeded(prop);
       propertyLabel = prop.label;
 
-      // In the purchase year, rent is still paid up to purchase, but we
-      // also use the full year's contributions for the purchase
-      const availableBalance = startBalance + annualContribution + growth;
+      const availableBalance = startBalance + monthlyInvesting + growth;
 
       if (availableBalance >= cashNeeded) {
         propertyWithdrawal = cashNeeded;
@@ -88,64 +151,91 @@ export function buildScenario(
 
       // Set up post-purchase monthly costs
       const loanAmount = prop.price * (1 - prop.downPaymentPercent / 100);
-      monthlyMortgage = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
+      mortgagePayment = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
 
-      // Parent loan repayment (interest-free, spread over N years)
-      const totalLoanForProperty = parentLoan;
-      if (totalLoanForProperty > 0 && config.parentLoanYears > 0) {
-        monthlyParentLoan = totalLoanForProperty / (config.parentLoanYears * 12);
-        parentLoanEndYear = y + config.parentLoanYears;
+      if (parentLoan > 0 && config.parentLoanYears > 0) {
+        parentLoanPayment = parentLoan / (config.parentLoanYears * 12);
+        parentLoanEndMonth = m + config.parentLoanYears * 12;
       }
     }
 
-    // Check if parent loan just ended this year
-    if (y === parentLoanEndYear + 1) {
-      monthlyParentLoan = 0;
+    // Check if parent loan just ended
+    if (m === parentLoanEndMonth + 1) {
+      parentLoanPayment = 0;
     }
 
-    balance = startBalance + annualContribution + growth - propertyWithdrawal;
+    balance = startBalance + monthlyInvesting + growth - propertyWithdrawal;
 
     if (balance < 0) {
       feasible = false;
       balance = 0;
     }
 
-    // Check if FIRE target is reached this year
-    const adjustedFire = inflationAdjustedFireNumber(
+    // Determine phase label
+    let phase: string;
+    if (m <= firstPurchaseMonth) {
+      phase = 'Renting';
+    } else if (m <= parentLoanEndMonth) {
+      phase = 'Mortgage + Parent Loan';
+    } else if (firstPurchaseMonth < Infinity) {
+      phase = 'Mortgage Only';
+    } else {
+      phase = 'Investing';
+    }
+
+    // Check FIRE target
+    const adjustedFire = inflationAdjustedFireNumberAtMonth(
       config.annualExpenses,
       config.withdrawalRate,
       config.inflationRate,
-      y,
+      m,
     );
 
-    if (fireReachedYear === null && balance >= adjustedFire) {
-      fireReachedYear = y;
-      fireReachedAge = config.currentAge + y;
+    if (fireReachedMonth === null && balance >= adjustedFire) {
+      fireReachedMonth = m;
+      fireReachedDate = dateStr;
+      fireReachedYear = Math.ceil(m / 12);
+      fireReachedAge = age;
     }
 
-    projections.push({
-      year: y,
-      age: config.currentAge + y,
+    monthProjections.push({
+      month: m,
+      date: dateStr,
+      age,
+      phase,
       startBalance,
-      contributions: annualContribution,
+      contribution: monthlyInvesting,
       growth,
       propertyWithdrawal,
       propertyLabel,
       parentLoan: parentLoan > 0 ? parentLoan : undefined,
       endBalance: balance,
+      monthlyRent: rent,
+      monthlyMortgage: mortgage,
+      monthlyParentLoan: plPayment,
+      monthlyInvesting,
     });
   }
 
+  // Aggregate to yearly projections (backward compat)
+  const projections = aggregateToYearly(monthProjections, config.currentAge, startYear, startMo, birthMonth);
+
   // Build phase summary
-  if (properties.length > 0 && firstPurchaseYear <= years) {
-    const prop = propertyMap.get(firstPurchaseYear)!;
-    const loanAmount = prop.price * (1 - prop.downPaymentPercent / 100);
-    const mortgagePayment = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
+  const phases: ScenarioPhase[] = [];
+  const years = config.targetAge - config.currentAge;
+
+  if (properties.length > 0 && firstPurchaseMonth <= totalMonths) {
+    const firstProp = properties.find(
+      (p) => (p.purchaseMonth ?? p.purchaseYear * 12) === firstPurchaseMonth,
+    )!;
+    const loanAmount = firstProp.price * (1 - firstProp.downPaymentPercent / 100);
+    const mortgagePmt = monthlyMortgagePayment(loanAmount, firstProp.mortgageRate, firstProp.mortgageTerm);
     const parentRepayment = totalParentLoan > 0
       ? totalParentLoan / (config.parentLoanYears * 12)
       : 0;
+    const firstPurchaseYear = Math.ceil(firstPurchaseMonth / 12);
+    const parentLoanEndYear = parentLoanEndMonth > 0 ? Math.ceil(parentLoanEndMonth / 12) : 0;
 
-    // Phase 0: Pre-purchase (if purchase isn't year 1... but even year 1 has the rent phase)
     if (firstPurchaseYear >= 1) {
       const rent = config.monthlyRent ?? 0;
       const investing = Math.max(0, config.monthlyInvestment - rent);
@@ -160,42 +250,39 @@ export function buildScenario(
       });
     }
 
-    // Phase 1: Mortgage + parent loan
     if (totalParentLoan > 0 && config.parentLoanYears > 0) {
       const endAge = Math.min(config.currentAge + firstPurchaseYear + config.parentLoanYears, config.targetAge);
-      const investing = Math.max(0, config.monthlyInvestment - mortgagePayment - parentRepayment);
+      const investing = Math.max(0, config.monthlyInvestment - mortgagePmt - parentRepayment);
       phases.push({
         label: 'Mortgage + parent loan repayment',
         fromAge: config.currentAge + firstPurchaseYear + 1,
         toAge: endAge,
         monthlyInvesting: investing,
-        monthlyMortgage: mortgagePayment,
+        monthlyMortgage: mortgagePmt,
         monthlyParentLoan: parentRepayment,
         monthlyRent: 0,
       });
 
-      // Phase 2: Mortgage only (after parent loan done)
       if (endAge < config.targetAge) {
-        const investing2 = Math.max(0, config.monthlyInvestment - mortgagePayment);
+        const investing2 = Math.max(0, config.monthlyInvestment - mortgagePmt);
         phases.push({
           label: 'Mortgage only (parent loan done)',
           fromAge: endAge + 1,
           toAge: config.targetAge,
           monthlyInvesting: investing2,
-          monthlyMortgage: mortgagePayment,
+          monthlyMortgage: mortgagePmt,
           monthlyParentLoan: 0,
           monthlyRent: 0,
         });
       }
     } else {
-      // No parent loan — just mortgage
-      const investing = Math.max(0, config.monthlyInvestment - mortgagePayment);
+      const investing = Math.max(0, config.monthlyInvestment - mortgagePmt);
       phases.push({
         label: 'Mortgage only',
         fromAge: config.currentAge + firstPurchaseYear + 1,
         toAge: config.targetAge,
         monthlyInvesting: investing,
-        monthlyMortgage: mortgagePayment,
+        monthlyMortgage: mortgagePmt,
         monthlyParentLoan: 0,
         monthlyRent: 0,
       });
@@ -206,13 +293,65 @@ export function buildScenario(
     label,
     returnRate,
     projections,
+    monthProjections,
     fireReachedYear,
     fireReachedAge,
+    fireReachedMonth,
+    fireReachedDate,
     finalBalance: balance,
     feasible,
     parentLoanTotal: totalParentLoan > 0 ? totalParentLoan : undefined,
     phases: phases.length > 0 ? phases : undefined,
   };
+}
+
+/**
+ * Aggregate monthly projections into yearly projections.
+ * Groups every 12 months; sums contributions, growth, property withdrawals.
+ * Takes end balance from the last month of each group.
+ */
+function aggregateToYearly(
+  months: MonthProjection[],
+  currentAge: number,
+  startYear: number,
+  startMo: number,
+  birthMonth: number,
+): YearProjection[] {
+  const yearly: YearProjection[] = [];
+
+  for (let i = 0; i < months.length; i += 12) {
+    const chunk = months.slice(i, i + 12);
+    const yearNum = Math.floor(i / 12) + 1;
+    const lastMonth = chunk[chunk.length - 1];
+
+    let contributions = 0;
+    let growth = 0;
+    let propertyWithdrawal = 0;
+    let propertyLabel: string | undefined;
+    let parentLoan = 0;
+
+    for (const mp of chunk) {
+      contributions += mp.contribution;
+      growth += mp.growth;
+      propertyWithdrawal += mp.propertyWithdrawal;
+      if (mp.propertyLabel) propertyLabel = mp.propertyLabel;
+      if (mp.parentLoan) parentLoan += mp.parentLoan;
+    }
+
+    yearly.push({
+      year: yearNum,
+      age: lastMonth.age,
+      startBalance: chunk[0].startBalance,
+      contributions,
+      growth,
+      propertyWithdrawal,
+      propertyLabel,
+      parentLoan: parentLoan > 0 ? parentLoan : undefined,
+      endBalance: lastMonth.endBalance,
+    });
+  }
+
+  return yearly;
 }
 
 /**

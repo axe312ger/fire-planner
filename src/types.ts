@@ -12,6 +12,8 @@ export interface FireConfig {
   monthlyRent: number; // rent paid until property purchase
   parentLoanYears: number; // years to repay parent loan (interest-free)
   returnRates: number[]; // e.g. [0.05, 0.07, 0.09]
+  startDate?: string; // ISO month "2026-02", default from defaults.ts
+  birthMonth?: number; // 1-12, default 5 (May)
 }
 
 export interface PropertyConfig {
@@ -20,9 +22,28 @@ export interface PropertyConfig {
   feesPercent: number; // e.g. 12 for 12%
   additionalCosts: number; // interior, renovation, etc.
   purchaseYear: number; // year offset from now (e.g. 3 = in 3 years)
+  purchaseMonth?: number; // month offset from start; overrides purchaseYear * 12 when set
   mortgageRate: number; // annual % e.g. 3.2
   mortgageTerm: number; // years
   label: string;
+}
+
+export interface MonthProjection {
+  month: number;           // 1-based offset from start
+  date: string;            // "2026-03", "2026-04"...
+  age: number;             // integer age (changes at birthday month)
+  phase: string;           // "Renting", "Mortgage + Parent Loan", "Mortgage Only"
+  startBalance: number;
+  contribution: number;    // this month's investment
+  growth: number;          // this month's portfolio growth
+  propertyWithdrawal: number;
+  propertyLabel?: string;
+  parentLoan?: number;
+  endBalance: number;
+  monthlyRent: number;
+  monthlyMortgage: number;
+  monthlyParentLoan: number;
+  monthlyInvesting: number;
 }
 
 export interface YearProjection {
@@ -41,8 +62,11 @@ export interface Scenario {
   label: string;
   returnRate: number;
   projections: YearProjection[];
+  monthProjections: MonthProjection[];
   fireReachedYear: number | null;
   fireReachedAge: number | null;
+  fireReachedMonth: number | null;
+  fireReachedDate: string | null; // "2038-07"
   finalBalance: number;
   feasible: boolean;
   parentLoanTotal?: number; // Total borrowed from parents for all properties

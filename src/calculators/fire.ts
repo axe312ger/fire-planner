@@ -23,6 +23,19 @@ export function inflationAdjustedFireNumber(
 }
 
 /**
+ * Calculate inflation-adjusted FIRE number at a specific month offset.
+ * Convenience wrapper that converts months to fractional years.
+ */
+export function inflationAdjustedFireNumberAtMonth(
+  annualExpenses: number,
+  withdrawalRate: number,
+  inflationRate: number,
+  months: number,
+): number {
+  return inflationAdjustedFireNumber(annualExpenses, withdrawalRate, inflationRate, months / 12);
+}
+
+/**
  * Calculate the total cash needed for a property purchase (down payment + fees).
  */
 export function propertyCashNeeded(property: PropertyConfig): number {

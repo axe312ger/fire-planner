@@ -37,6 +37,8 @@ interface CalculateOptions {
   fincaYear?: string;
   rates?: string;
   mortgageRate?: string;
+  startDate?: string;
+  birthMonth?: string;
 }
 
 export function calculateCommand(opts: CalculateOptions): void {
@@ -54,6 +56,8 @@ export function calculateCommand(opts: CalculateOptions): void {
     returnRates: opts.rates
       ? opts.rates.split(',').map((r) => parseFloat(r) / 100)
       : DEFAULT_FIRE_CONFIG.returnRates,
+    startDate: opts.startDate ?? DEFAULT_FIRE_CONFIG.startDate,
+    birthMonth: opts.birthMonth ? num(opts.birthMonth, DEFAULT_FIRE_CONFIG.birthMonth!) : DEFAULT_FIRE_CONFIG.birthMonth,
   };
 
   const mortRate = num(opts.mortgageRate, DEFAULT_FLAT.mortgageRate);
