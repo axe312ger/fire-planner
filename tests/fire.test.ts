@@ -126,6 +126,39 @@ describe('gapAnalysis', () => {
     expect(gap.monthlyShortfall).toBeGreaterThan(0);
   });
 
+  it('with property: required monthly accounts for mortgage phases', () => {
+    const config = {
+      currentAge: 35,
+      targetAge: 55,
+      annualExpenses: 40_000,
+      withdrawalRate: 0.04,
+      inflationRate: 0.02,
+      currentPortfolio: 9_000,
+      currentCash: 7_500,
+      monthlyInvestment: 4_000,
+      monthlyRent: 1_400,
+      parentLoanYears: 10,
+      returnRates: [0.07],
+    };
+    const property: PropertyConfig = {
+      price: 500_000,
+      downPaymentPercent: 20,
+      feesPercent: 12,
+      additionalCosts: 30_000,
+      purchaseYear: 1,
+      mortgageRate: 3.2,
+      mortgageTerm: 20,
+      label: 'Flat',
+    };
+
+    const gap = gapAnalysis(config, [property], 0.07);
+
+    // With property phases (mortgage eating into monthly capacity),
+    // required monthly should be higher than without property
+    const gapNoProperty = gapAnalysis(config, [], 0.07);
+    expect(gap.requiredMonthly).toBeGreaterThan(gapNoProperty.requiredMonthly);
+  });
+
   it('shows surplus when current savings exceed required', () => {
     const config = {
       currentAge: 35,

@@ -31,9 +31,11 @@ interface PlanOptions {
   portfolio?: string;
   cash?: string;
   monthly?: string;
+  netMonthly?: string;
   rent?: string;
   parentLoanYears?: string;
   rentStartMonth?: string;
+  keepPortfolio?: boolean;
   flatPrice?: string;
   flatDown?: string;
   flatFees?: string;
@@ -59,9 +61,12 @@ export function planCommand(opts: PlanOptions): void {
     inflationRate: DEFAULT_FIRE_CONFIG.inflationRate,
     currentPortfolio: num(opts.portfolio, DEFAULT_FIRE_CONFIG.currentPortfolio),
     currentCash: num(opts.cash, DEFAULT_FIRE_CONFIG.currentCash),
-    monthlyInvestment: num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
+    monthlyInvestment: opts.netMonthly
+      ? num(opts.netMonthly, 0) + num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent)
+      : num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
     monthlyRent: num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent),
     rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
+    keepPortfolio: opts.keepPortfolio ?? false,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
     returnRates: DEFAULT_FIRE_CONFIG.returnRates,
     startDate: opts.startDate ?? DEFAULT_FIRE_CONFIG.startDate,
@@ -254,15 +259,23 @@ export function planCommand(opts: PlanOptions): void {
   console.log(theme.subheading('  Monthly Investment Allocation by Phase:'));
   console.log('');
 
-  const firstPurchaseYear = Math.ceil(firstPurchaseMonth / 12);
-  const parentLoanEndYear = monthlyParentLoan > 0 ? firstPurchaseYear + config.parentLoanYears : 0;
-
   const colW = 18;
-  const terminalPhases = [
-    { label: `Rent (age ${config.currentAge + 1})`, monthly: phase1Monthly },
-    { label: `Mort+Loan (${config.currentAge + firstPurchaseYear + 1}-${config.currentAge + parentLoanEndYear})`, monthly: phase2Monthly },
-    { label: `Mort only (${config.currentAge + parentLoanEndYear + 1}-${config.targetAge})`, monthly: phase3Monthly },
-  ];
+  let terminalPhases: { label: string; monthly: number }[];
+
+  if (firstPurchaseMonth === Infinity) {
+    // No property — single investing phase
+    terminalPhases = [
+      { label: `Investing (${config.currentAge + 1}-${config.targetAge})`, monthly: config.monthlyInvestment },
+    ];
+  } else {
+    const firstPurchaseYear = Math.ceil(firstPurchaseMonth / 12);
+    const parentLoanEndYear = monthlyParentLoan > 0 ? firstPurchaseYear + config.parentLoanYears : 0;
+    terminalPhases = [
+      { label: `Rent (age ${config.currentAge + 1})`, monthly: phase1Monthly },
+      { label: `Mort+Loan (${config.currentAge + firstPurchaseYear + 1}-${config.currentAge + parentLoanEndYear})`, monthly: phase2Monthly },
+      { label: `Mort only (${config.currentAge + parentLoanEndYear + 1}-${config.targetAge})`, monthly: phase3Monthly },
+    ];
+  }
 
   // Header
   const tableHeader = '  ' + pad('Category', 22) + terminalPhases.map((p) => rpad(p.label, colW)).join('');

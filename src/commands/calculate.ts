@@ -23,8 +23,10 @@ interface CalculateOptions {
   portfolio?: string;
   cash?: string;
   monthly?: string;
+  netMonthly?: string;
   rent?: string;
   rentStartMonth?: string;
+  keepPortfolio?: boolean;
   parentLoanYears?: string;
   flatPrice?: string;
   flatDown?: string;
@@ -51,9 +53,12 @@ export function calculateCommand(opts: CalculateOptions): void {
     inflationRate: num(opts.inflation, DEFAULT_FIRE_CONFIG.inflationRate),
     currentPortfolio: num(opts.portfolio, DEFAULT_FIRE_CONFIG.currentPortfolio),
     currentCash: num(opts.cash, DEFAULT_FIRE_CONFIG.currentCash),
-    monthlyInvestment: num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
+    monthlyInvestment: opts.netMonthly
+      ? num(opts.netMonthly, 0) + num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent)
+      : num(opts.monthly, DEFAULT_FIRE_CONFIG.monthlyInvestment),
     monthlyRent: num(opts.rent, DEFAULT_FIRE_CONFIG.monthlyRent),
     rentStartMonth: opts.rentStartMonth !== undefined ? num(opts.rentStartMonth, DEFAULT_FIRE_CONFIG.rentStartMonth!) : DEFAULT_FIRE_CONFIG.rentStartMonth,
+    keepPortfolio: opts.keepPortfolio ?? false,
     parentLoanYears: num(opts.parentLoanYears, DEFAULT_FIRE_CONFIG.parentLoanYears),
     returnRates: opts.rates
       ? opts.rates.split(',').map((r) => parseFloat(r) / 100)

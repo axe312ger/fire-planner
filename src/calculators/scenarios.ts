@@ -109,8 +109,8 @@ export function buildScenario(
   let fireReachedAge: number | null = null;
   let feasible = true;
 
-  // Monthly budget tracking
-  let mortgagePayment = 0;
+  // Monthly budget tracking — support multiple mortgages
+  const activeMortgages: { payment: number; endMonth: number }[] = [];
   let parentLoanPayment = 0;
   let parentLoanEndMonth = 0;
   let totalParentLoan = 0;
@@ -124,9 +124,9 @@ export function buildScenario(
     const age = computeAge(config.currentAge, startYear, startMo, m, birthMonth);
 
     // Determine monthly costs
-    const rent = (m >= rentStartMonth && m <= firstPurchaseMonth) ? (config.monthlyRent ?? 0) : 0;
+    const rent = (m >= rentStartMonth && m < firstPurchaseMonth) ? (config.monthlyRent ?? 0) : 0;
     const plPayment = (m > firstPurchaseMonth && m <= parentLoanEndMonth) ? parentLoanPayment : 0;
-    const mortgage = m > firstPurchaseMonth ? mortgagePayment : 0;
+    const mortgage = activeMortgages.reduce((sum, mtg) => sum + (m <= mtg.endMonth ? mtg.payment : 0), 0);
 
     const monthlyInvesting = Math.max(0, config.monthlyInvestment - rent - mortgage - plPayment);
     const growth = startBalance * monthlyReturnRate;
@@ -140,19 +140,26 @@ export function buildScenario(
       const cashNeeded = propertyCashNeeded(prop);
       propertyLabel = prop.label;
 
-      const availableBalance = startBalance + monthlyInvesting + growth;
-
-      if (availableBalance >= cashNeeded) {
-        propertyWithdrawal = cashNeeded;
-      } else {
-        parentLoan = cashNeeded - Math.max(0, availableBalance);
-        propertyWithdrawal = Math.max(0, availableBalance);
+      if (config.keepPortfolio) {
+        // Portfolio is not used for property — full cost is parent loan
+        parentLoan = cashNeeded;
         totalParentLoan += parentLoan;
+      } else {
+        const availableBalance = startBalance + monthlyInvesting + growth;
+
+        if (availableBalance >= cashNeeded) {
+          propertyWithdrawal = cashNeeded;
+        } else {
+          parentLoan = cashNeeded - Math.max(0, availableBalance);
+          propertyWithdrawal = Math.max(0, availableBalance);
+          totalParentLoan += parentLoan;
+        }
       }
 
       // Set up post-purchase monthly costs
       const loanAmount = prop.price * (1 - prop.downPaymentPercent / 100);
-      mortgagePayment = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
+      const newMortgagePayment = monthlyMortgagePayment(loanAmount, prop.mortgageRate, prop.mortgageTerm);
+      activeMortgages.push({ payment: newMortgagePayment, endMonth: m + prop.mortgageTerm * 12 });
 
       if (parentLoan > 0 && config.parentLoanYears > 0) {
         parentLoanPayment = parentLoan / (config.parentLoanYears * 12);
@@ -173,13 +180,16 @@ export function buildScenario(
     }
 
     // Determine phase label
+    const anyMortgageActive = activeMortgages.some(mtg => m <= mtg.endMonth);
     let phase: string;
     if (m <= firstPurchaseMonth) {
       phase = 'Renting';
     } else if (m <= parentLoanEndMonth) {
       phase = 'Mortgage + Parent Loan';
-    } else if (firstPurchaseMonth < Infinity) {
+    } else if (anyMortgageActive) {
       phase = 'Mortgage Only';
+    } else if (firstPurchaseMonth < Infinity) {
+      phase = 'Post-Mortgage';
     } else {
       phase = 'Investing';
     }
@@ -272,39 +282,58 @@ export function buildScenario(
       }
     }
 
+    // Total mortgage payment and latest end month across all properties
+    const totalMortgagePmt = activeMortgages.reduce((sum, mtg) => sum + mtg.payment, 0);
+    const lastMortgageEndMonth = Math.max(...activeMortgages.map(mtg => mtg.endMonth));
+    const mortgageEndYear = Math.ceil(lastMortgageEndMonth / 12);
+    const mortgageEndAge = Math.min(config.currentAge + mortgageEndYear, config.targetAge);
+
     if (totalParentLoan > 0 && config.parentLoanYears > 0) {
-      const endAge = Math.min(config.currentAge + firstPurchaseYear + config.parentLoanYears, config.targetAge);
-      const investing = Math.max(0, config.monthlyInvestment - mortgagePmt - parentRepayment);
+      const plEndAge = Math.min(config.currentAge + firstPurchaseYear + config.parentLoanYears, config.targetAge);
+      const investing = Math.max(0, config.monthlyInvestment - totalMortgagePmt - parentRepayment);
       phases.push({
         label: 'Mortgage + parent loan repayment',
         fromAge: config.currentAge + firstPurchaseYear + 1,
-        toAge: endAge,
+        toAge: Math.min(plEndAge, mortgageEndAge),
         monthlyInvesting: investing,
-        monthlyMortgage: mortgagePmt,
+        monthlyMortgage: totalMortgagePmt,
         monthlyParentLoan: parentRepayment,
         monthlyRent: 0,
       });
 
-      if (endAge < config.targetAge) {
-        const investing2 = Math.max(0, config.monthlyInvestment - mortgagePmt);
+      if (plEndAge < mortgageEndAge && plEndAge < config.targetAge) {
+        const investing2 = Math.max(0, config.monthlyInvestment - totalMortgagePmt);
         phases.push({
           label: 'Mortgage only (parent loan done)',
-          fromAge: endAge + 1,
-          toAge: config.targetAge,
+          fromAge: plEndAge + 1,
+          toAge: mortgageEndAge,
           monthlyInvesting: investing2,
-          monthlyMortgage: mortgagePmt,
+          monthlyMortgage: totalMortgagePmt,
           monthlyParentLoan: 0,
           monthlyRent: 0,
         });
       }
     } else {
-      const investing = Math.max(0, config.monthlyInvestment - mortgagePmt);
+      const investing = Math.max(0, config.monthlyInvestment - totalMortgagePmt);
       phases.push({
         label: 'Mortgage only',
         fromAge: config.currentAge + firstPurchaseYear + 1,
-        toAge: config.targetAge,
+        toAge: mortgageEndAge,
         monthlyInvesting: investing,
-        monthlyMortgage: mortgagePmt,
+        monthlyMortgage: totalMortgagePmt,
+        monthlyParentLoan: 0,
+        monthlyRent: 0,
+      });
+    }
+
+    // Post-mortgage phase: full investing capacity
+    if (mortgageEndAge < config.targetAge) {
+      phases.push({
+        label: 'Post-mortgage (full investing)',
+        fromAge: mortgageEndAge + 1,
+        toAge: config.targetAge,
+        monthlyInvesting: config.monthlyInvestment,
+        monthlyMortgage: 0,
         monthlyParentLoan: 0,
         monthlyRent: 0,
       });

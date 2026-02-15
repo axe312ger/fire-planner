@@ -1,5 +1,6 @@
 import type { FireConfig, GapAnalysis, PropertyConfig } from '../types.js';
 import { requiredMonthly } from './compound.js';
+import { buildScenario } from './scenarios.js';
 
 /**
  * Calculate the basic FIRE number: annual expenses / withdrawal rate.
@@ -65,7 +66,12 @@ export function gapAnalysis(
   const gap = totalNeeded - currentAssets;
 
   const months = years * 12;
-  const reqMonthly = requiredMonthly(currentAssets, totalNeeded, returnRate, months);
+
+  // Use binary search with the actual scenario engine to find the required monthly
+  // that reaches the inflation-adjusted FIRE target, accounting for all phases
+  const reqMonthly = properties.length > 0
+    ? requiredMonthlyWithPhases(config, properties, returnRate, adjustedFire)
+    : requiredMonthly(currentAssets, adjustedFire, returnRate, months);
 
   return {
     fireNumber: basicFire,
@@ -78,4 +84,33 @@ export function gapAnalysis(
     currentMonthly: config.monthlyInvestment,
     monthlyShortfall: reqMonthly - config.monthlyInvestment,
   };
+}
+
+/**
+ * Binary search for the required monthlyInvestment that makes the scenario
+ * reach the FIRE target, accounting for property purchases, mortgage phases, etc.
+ */
+function requiredMonthlyWithPhases(
+  config: FireConfig,
+  properties: PropertyConfig[],
+  returnRate: number,
+  fireTarget: number,
+): number {
+  let lo = 0;
+  let hi = 50_000; // reasonable upper bound
+  const tolerance = 1; // within €1
+
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    const testConfig = { ...config, monthlyInvestment: mid };
+    const scenario = buildScenario(testConfig, properties, returnRate);
+    if (scenario.finalBalance >= fireTarget) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+    if (hi - lo < tolerance) break;
+  }
+
+  return Math.ceil(hi);
 }

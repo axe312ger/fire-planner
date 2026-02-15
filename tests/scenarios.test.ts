@@ -279,6 +279,136 @@ describe('buildScenario — monthly projections', () => {
   });
 });
 
+describe('mortgage term end', () => {
+  it('mortgage payments stop after mortgage term expires', () => {
+    // 10yr mortgage bought at year 1 with 30yr target → mortgage ends at month 132 (year 11)
+    const shortMortgage: PropertyConfig = { ...flat, mortgageTerm: 10 };
+    const config30yr: FireConfig = { ...baseConfig, targetAge: 65 };
+    const scenario = buildScenario(config30yr, [shortMortgage], 0.07);
+
+    // Month 12 = purchase. Mortgage months = 13..132 (10yr * 12).
+    // Month 132 = last mortgage month. Month 133 = no mortgage.
+    const lastMortgageMonth = scenario.monthProjections[131]; // 0-indexed → month 132
+    const firstFreMonth = scenario.monthProjections[132]; // month 133
+
+    expect(lastMortgageMonth.monthlyMortgage).toBeGreaterThan(0);
+    expect(firstFreMonth.monthlyMortgage).toBe(0);
+  });
+
+  it('post-mortgage investing equals full monthly capacity', () => {
+    const shortMortgage: PropertyConfig = { ...flat, mortgageTerm: 5 };
+    const config30yr: FireConfig = { ...baseConfig, targetAge: 65, monthlyRent: 0 };
+    const scenario = buildScenario(config30yr, [shortMortgage], 0.07);
+
+    // After mortgage ends, full monthly capacity goes to investing
+    const lastMonth = scenario.monthProjections[scenario.monthProjections.length - 1];
+    expect(lastMonth.monthlyMortgage).toBe(0);
+    expect(lastMonth.monthlyInvesting).toBe(config30yr.monthlyInvestment);
+  });
+
+  it('phase summary includes post-mortgage phase when mortgage ends before target', () => {
+    const shortMortgage: PropertyConfig = { ...flat, mortgageTerm: 10 };
+    const config30yr: FireConfig = { ...baseConfig, targetAge: 65 };
+    const scenario = buildScenario(config30yr, [shortMortgage], 0.07);
+
+    expect(scenario.phases).toBeDefined();
+    const postMortgage = scenario.phases!.find(p => p.label.includes('Post-mortgage'));
+    expect(postMortgage).toBeDefined();
+    expect(postMortgage!.monthlyMortgage).toBe(0);
+    expect(postMortgage!.monthlyInvesting).toBe(config30yr.monthlyInvestment);
+  });
+});
+
+describe('rent stops on purchase month', () => {
+  it('no rent charged in the month the flat is purchased', () => {
+    const laterFlat: PropertyConfig = { ...flat, purchaseYear: 2 }; // month 24
+    const scenario = buildScenario(baseConfig, [laterFlat], 0.07);
+
+    // Month 23 (before purchase): rent should be charged
+    const beforePurchase = scenario.monthProjections[22]; // 0-indexed
+    expect(beforePurchase.monthlyRent).toBe(1_400);
+
+    // Month 24 (purchase month): no rent
+    const purchaseMonth = scenario.monthProjections[23];
+    expect(purchaseMonth.monthlyRent).toBe(0);
+  });
+});
+
+describe('multiple property mortgage stacking', () => {
+  it('stacks mortgage payments from two properties', () => {
+    const richConfig: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 500_000,
+      monthlyInvestment: 10_000,
+      monthlyRent: 0,
+      targetAge: 65,
+    };
+    const flat1: PropertyConfig = { ...flat, purchaseYear: 1, mortgageTerm: 20, label: 'Flat 1' };
+    const flat2: PropertyConfig = { ...flat, price: 300_000, purchaseYear: 3, mortgageTerm: 15, label: 'Flat 2' };
+
+    const scenario = buildScenario(richConfig, [flat1, flat2], 0.07);
+
+    // After both purchased (month 37+), mortgage should be sum of both
+    const monthAfterBoth = scenario.monthProjections[36]; // month 37
+    const singleMortgage1 = scenario.monthProjections[12]; // month 13, only flat1
+
+    expect(monthAfterBoth.monthlyMortgage).toBeGreaterThan(singleMortgage1.monthlyMortgage);
+  });
+
+  it('second mortgage ending does not kill first mortgage', () => {
+    const richConfig: FireConfig = {
+      ...baseConfig,
+      currentPortfolio: 500_000,
+      monthlyInvestment: 10_000,
+      monthlyRent: 0,
+      targetAge: 65,
+    };
+    const flat1: PropertyConfig = { ...flat, purchaseYear: 1, mortgageTerm: 25, label: 'Flat 1' };
+    const flat2: PropertyConfig = { ...flat, price: 200_000, purchaseYear: 2, mortgageTerm: 5, label: 'Flat 2' };
+
+    const scenario = buildScenario(richConfig, [flat1, flat2], 0.07);
+
+    // Flat2 mortgage ends at month 24 + 60 = 84. Month 85 should still have flat1 mortgage.
+    const afterFlat2Ends = scenario.monthProjections[84]; // month 85
+    expect(afterFlat2Ends.monthlyMortgage).toBeGreaterThan(0);
+
+    // But should be less than when both were active
+    const bothActive = scenario.monthProjections[30]; // month 31
+    expect(afterFlat2Ends.monthlyMortgage).toBeLessThan(bothActive.monthlyMortgage);
+  });
+});
+
+describe('keepPortfolio option', () => {
+  it('does not withdraw from portfolio when keepPortfolio is true', () => {
+    const config: FireConfig = { ...baseConfig, keepPortfolio: true, targetAge: 55 };
+    const scenario = buildScenario(config, [flat], 0.07);
+
+    // No property withdrawal from portfolio
+    for (const mp of scenario.monthProjections) {
+      expect(mp.propertyWithdrawal).toBe(0);
+    }
+
+    // Full cost goes to parent loan
+    const cashNeeded = 500_000 * 0.32 + 30_000; // 190,000
+    expect(scenario.parentLoanTotal).toBeCloseTo(cashNeeded, -1);
+  });
+
+  it('portfolio grows continuously when keepPortfolio is true', () => {
+    const richConfig: FireConfig = {
+      ...baseConfig,
+      keepPortfolio: true,
+      currentPortfolio: 50_000,
+      monthlyRent: 0,
+      targetAge: 55,
+    };
+    const scenario = buildScenario(richConfig, [flat], 0.07);
+
+    // Balance should never drop to 0 at purchase month
+    const purchaseMonth = scenario.monthProjections[11]; // month 12
+    expect(purchaseMonth.endBalance).toBeGreaterThan(50_000);
+  });
+});
+
 describe('buildAllScenarios', () => {
   it('builds scenarios for all return rates', () => {
     const scenarios = buildAllScenarios(baseConfig, []);
